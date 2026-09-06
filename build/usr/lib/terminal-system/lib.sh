@@ -79,3 +79,31 @@ $prompt" > /dev/null 2>&1
     printf '%s\n' "$out"
     return 0
 }
+
+ts_parse_commands() {
+    local raw="$1" cleaned line out=() wc
+    if grep -q '^```' <<< "$raw"; then
+        cleaned="$(sed -n '/^```/,/^```/{//!p}' <<< "$raw")"
+    else
+        cleaned="$raw"
+    fi
+
+    while IFS= read -r line; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        [ -z "$line" ] && continue
+        wc=$(wc -w <<< "$line")
+        if [ "$wc" -gt 12 ]; then
+            printf '%s\n' "$raw"
+            return 2
+        fi
+        out+=("$line")
+    done <<< "$cleaned"
+
+    if [ "${#out[@]}" -eq 0 ]; then
+        printf '%s\n' "$raw"
+        return 2
+    fi
+
+    printf '%s\n' "${out[@]}"
+    return 0
+}

@@ -109,4 +109,46 @@ run '
     if ts_call_engine claude "x" > /dev/null 2>&1; then echo "FAIL - call_engine should fail on empty response"; else echo "ok - call_engine fails cleanly on empty response"; fi
 '
 
+run '
+    . "'"$LIB"'"
+    got="$(ts_parse_commands "sudo adduser Pippo")"; rc=$?
+    [ "$got" = "sudo adduser Pippo" ] && [ "$rc" -eq 0 ] && echo "ok - parse_commands single clean command" || echo "FAIL - parse_commands single (got: $got / rc=$rc)"
+'
+
+run '
+    . "'"$LIB"'"
+    raw="\`\`\`
+sudo apt update
+sudo apt upgrade -y
+sudo apt autoremove -y
+\`\`\`"
+    got="$(ts_parse_commands "$raw")"; rc=$?
+    want="sudo apt update
+sudo apt upgrade -y
+sudo apt autoremove -y"
+    [ "$got" = "$want" ] && [ "$rc" -eq 0 ] && echo "ok - parse_commands fenced multi-command" || echo "FAIL - parse_commands fenced (got: $got / rc=$rc)"
+'
+
+run '
+    . "'"$LIB"'"
+    raw="Per creare un nuovo utente puoi utilizzare il comando adduser seguito dal nome utente che desideri creare."
+    got="$(ts_parse_commands "$raw")"; rc=$?
+    [ "$got" = "$raw" ] && [ "$rc" -eq 2 ] && echo "ok - parse_commands flags prose as unparseable" || echo "FAIL - parse_commands prose (rc=$rc)"
+'
+
+run '
+    . "'"$LIB"'"
+    got="$(ts_parse_commands "
+sudo adduser Pippo
+
+")"; rc=$?
+    [ "$got" = "sudo adduser Pippo" ] && [ "$rc" -eq 0 ] && echo "ok - parse_commands trims blank lines" || echo "FAIL - parse_commands blank lines (got: $got / rc=$rc)"
+'
+
+run '
+    . "'"$LIB"'"
+    got="$(ts_parse_commands "")"; rc=$?
+    [ "$rc" -eq 2 ] && echo "ok - parse_commands flags empty input as unparseable" || echo "FAIL - parse_commands empty (rc=$rc)"
+'
+
 exit $FAIL
