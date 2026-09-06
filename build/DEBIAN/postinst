@@ -3,9 +3,10 @@ set -e
 
 case "$1" in
     configure)
+        VERSION=$(dpkg-query -W -f='${Version}' terminal-system 2>/dev/null || echo "1.0.0")
         echo ""
         echo "=================================================="
-        echo "  terminal-system 1.0.0 installed"
+        echo "  terminal-system $VERSION installed"
         echo "=================================================="
         echo "  Requires claude and/or codex CLI already installed."
         echo "  Start with:  terminal-system [claude|codex]"

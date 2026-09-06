@@ -1,7 +1,6 @@
-f1404cd415e2472a53adc5166c3da2a0  ./usr/lib/terminal-system/lib.sh
-db15967024964146a735a1911ce0f3c4  ./usr/bin/ts-brain
-5b05674bdac7ba6cc337946bfa1d164e  ./usr/bin/terminal-system
-219bc696d37819044320c1d8deb67be6  ./usr/share/applications/terminal-system.desktop
-f96c518a77a26ed6f0f9f35afaeab172  ./usr/share/doc/terminal-system/README
-8c9969ea89df72e43d56aa467c5e7cd0  ./usr/share/man/man1/terminal-system.1
-8f5f1bd65ba5801651c2b08aca4192b3  ./usr/share/man/man1/terminal-system.1.gz
+795502e184af65092ca5c827869f8430  ./usr/bin/terminal-system
+8a2d80a5b633e39fb0e925eb31232ce8  ./usr/bin/ts-brain
+4ab81c2758887bd843103c6459d7864d  ./usr/lib/terminal-system/lib.sh
+8af8394c4e029ea484bfb9dd9d16ab72  ./usr/share/applications/terminal-system.desktop
+6da722dab7f9cd102cb9862cb9c5d1e6  ./usr/share/doc/terminal-system/README
+67ec53cb6b40954ed8af8291eb45629e  ./usr/share/man/man1/terminal-system.1.gz

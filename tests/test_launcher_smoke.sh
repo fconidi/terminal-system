@@ -9,7 +9,7 @@ SOCK="/tmp/ts-test-launcher-$$.sock"
 FAIL=0
 
 STUB_TMUX_DIR="$(mktemp -d)"
-cleanup() { tmux -S "$SOCK" kill-server > /dev/null 2>&1; rm -rf "$STUB_TMUX_DIR"; }
+cleanup() { tmux -S "$SOCK" kill-server > /dev/null 2>&1; rm -f "$SOCK"; rm -rf "$STUB_TMUX_DIR"; }
 trap cleanup EXIT
 
 export PATH="$STUB_DIR:$BIN_DIR:$PATH"
@@ -72,6 +72,9 @@ panes="$(tmux -S "$SOCK" list-panes -t "$session_name" 2> /dev/null | wc -l)"
 
 right_out="$(tmux -S "$SOCK" capture-pane -p -t "$session_name:0.1" -S -10)"
 check "right pane is running ts-brain" "$right_out" "terminal-system --"
+right_pid="$(tmux -S "$SOCK" display-message -p -t "$session_name:0.1" '#{pane_pid}')"
+right_args="$(ps -o args= -p "$right_pid" 2>/dev/null || true)"
+check "launcher passes a stable pane id to ts-brain" "$right_args" "%"
 
 tmux -S "$SOCK" send-keys -t "$session_name:0.1" ":quit" C-m
 sleep 0.3

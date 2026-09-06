@@ -24,4 +24,4 @@ Description: AI-assisted two-pane terminal (natural language -> shell commands)
  Requires the "claude" and/or "codex" CLI to already be installed and
  authenticated; neither is a hard package dependency since neither ships
  as a .deb on this system.
-Installed-Size: 40
+Installed-Size: 36

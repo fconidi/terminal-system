@@ -5,20 +5,53 @@
 # launches it with: ts-brain <tmux-session> <left-pane-target> <engine>
 set -uo pipefail
 
-LIBDIR="/usr/lib/terminal-system"
-[ -f "$LIBDIR/lib.sh" ] || LIBDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib/terminal-system" && pwd)"
+SCRIPT_LIBDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib/terminal-system" && pwd)"
+if [ -f "$SCRIPT_LIBDIR/lib.sh" ]; then
+    LIBDIR="$SCRIPT_LIBDIR"
+else
+    LIBDIR="/usr/lib/terminal-system"
+fi
 # shellcheck source=/usr/lib/terminal-system/lib.sh
 . "$LIBDIR/lib.sh"
 
 TS_SESSION="${1:?ts-brain: missing tmux session name}"
 TS_TARGET="${2:?ts-brain: missing target pane}"
 TS_ENGINE="${3:?ts-brain: missing engine}"
+TS_OPERATOR="${TMUX_PANE:-}"
 TS_AUTO=0
+force_manual=0
 
-TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: nessun motore AI trovato (claude, codex)."; exit 1; }
+TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: no AI engine found (claude, codex)."; exit 1; }
 
-echo "terminal-system -- motore: $TS_ENGINE (auto: off)"
-echo "Scrivi un'istruzione, oppure :auto on|off, :engine claude|codex, :quit"
+echo "terminal-system -- engine: $TS_ENGINE (auto: off)"
+echo "Type an instruction, or :cmd <command>, :manual, :auto on|off, :engine claude|codex, :quit"
+
+ts_other_engine() {
+    case "$1" in
+        claude) echo codex ;;
+        codex) echo claude ;;
+        *) return 1 ;;
+    esac
+}
+
+ts_run_manual_command() {
+    local cmd="$1" output
+    if [ -z "$cmd" ]; then
+        echo "usage: :cmd <shell command>"
+        return 0
+    fi
+    if ! ts_pane_alive "$TS_TARGET"; then
+        echo "left pane unavailable; closing the session."
+        tmux kill-session -t "$TS_SESSION" 2> /dev/null
+        exit 0
+    fi
+    ts_type_into_pane "$TS_TARGET" "$cmd"
+    if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR"; then
+        sleep 0.2
+        output="$(ts_capture_pane_tail "$TS_TARGET" 20)"
+        ts_history_append "manual command" "${TS_CONFIRMED_COMMAND:-$cmd}" "$output"
+    fi
+}
 
 while true; do
     printf '> '
@@ -32,28 +65,61 @@ while true; do
             ;;
         ":auto on")  TS_AUTO=1; echo "auto-mode: on"; continue ;;
         ":auto off") TS_AUTO=0; echo "auto-mode: off"; continue ;;
+        :cmd)
+            echo "usage: :cmd <shell command>"
+            continue
+            ;;
+        :cmd\ *)
+            ts_run_manual_command "${instruction#:cmd }"
+            continue
+            ;;
+        :manual)
+            printf 'manual command: '
+            if [ -t 0 ]; then
+                IFS= read -e -r manual_cmd || continue
+            else
+                IFS= read -r manual_cmd || continue
+            fi
+            ts_run_manual_command "$manual_cmd"
+            continue
+            ;;
         ":engine claude"|":engine codex")
             requested="${instruction#:engine }"
-            TS_ENGINE="$(ts_pick_engine "$requested")" || { echo "motore non disponibile"; continue; }
-            echo "motore: $TS_ENGINE"
+            TS_ENGINE="$(ts_pick_engine "$requested")" || { echo "engine unavailable"; continue; }
+            echo "engine: $TS_ENGINE"
             continue
             ;;
     esac
 
     prompt="$(ts_build_prompt "$instruction")"
     if ! raw="$(ts_call_engine "$TS_ENGINE" "$prompt")"; then
-        echo "errore: $TS_ENGINE non ha risposto, riformula l'istruzione."
-        continue
+        failed_engine="$TS_ENGINE"
+        fallback_engine="$(ts_other_engine "$failed_engine")"
+        if ts_resolve_bin "$fallback_engine" > /dev/null 2>&1; then
+            echo "error: $failed_engine did not respond; trying $fallback_engine."
+            if raw="$(ts_call_engine "$fallback_engine" "$prompt")"; then
+                TS_ENGINE="$fallback_engine"
+                echo "engine: $TS_ENGINE"
+            else
+                echo "error: $failed_engine and $fallback_engine did not respond; rephrase the instruction."
+                continue
+            fi
+        else
+            echo "error: $failed_engine did not respond and no fallback is available; rephrase the instruction."
+            continue
+        fi
     fi
 
+    force_manual=0
     parsed="$(ts_parse_commands "$raw")"; prc=$?
     if [ "$prc" -eq 2 ]; then
-        echo "risposta non chiara:"
+        echo "unclear response:"
         echo "$parsed"
-        printf 'procedere comunque, confermando ogni riga singolarmente? invio=si, n=annulla: '
+        printf 'continue anyway, confirming each line separately? enter=yes, n=cancel: '
         if ! IFS= read -r reply || [ "$reply" = "n" ] || [ "$reply" = "N" ]; then
             continue
         fi
+        force_manual=1
         parsed="$raw"
     fi
 
@@ -61,13 +127,18 @@ while true; do
     mapfile -t cmd_lines <<< "$parsed"
     for cmd in "${cmd_lines[@]}"; do
         [ -z "$cmd" ] && continue
+        if ! ts_pane_alive "$TS_TARGET"; then
+            echo "left pane unavailable; closing the session."
+            tmux kill-session -t "$TS_SESSION" 2> /dev/null
+            exit 0
+        fi
         ts_type_into_pane "$TS_TARGET" "$cmd"
-        if [ "$TS_AUTO" -eq 1 ] && ! ts_is_dangerous_command "$cmd"; then
-            ts_auto_send "$TS_TARGET"
+        if [ "$TS_AUTO" -eq 1 ] && [ "$force_manual" -eq 0 ] && ! ts_is_dangerous_command "$cmd"; then
+            ts_auto_send "$TS_TARGET" 0.3 "$cmd" "$TS_OPERATOR"
             executed+=("$cmd")
         else
-            if ts_confirm_and_send "$TS_TARGET" "$cmd"; then
-                executed+=("$cmd")
+            if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR"; then
+                executed+=("${TS_CONFIRMED_COMMAND:-$cmd}")
             fi
         fi
     done

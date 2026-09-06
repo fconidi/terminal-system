@@ -67,7 +67,7 @@ run '
 
 run '
     . "'"$LIB"'"
-    dangerous=("rm -rf /" "rm -rf /*" "rm -fr /" "mkfs.ext4 /dev/sdb1" "dd if=/dev/zero of=/dev/sda" ":(){ :|:& };:" "chmod -R 777 /" "shutdown -h now" "reboot" "killall -9 sshd" "userdel -r root" "iptables -F" "echo hi > /dev/sda")
+    dangerous=("rm -rf /" "rm -rf /*" "rm -fr /" "rm -r -f /" "rm -f -r /" "rm -rf -- /" "mkfs.ext4 /dev/sdb1" "dd if=/dev/zero of=/dev/sda" ":(){ :|:& };:" "chmod -R 777 /" "chmod 777 -R /" "chmod -vR 777 /" "shutdown -h now" "reboot" "killall -9 sshd" "userdel -r root" "iptables -F" "echo hi > /dev/sda" "echo hi > /dev/vda" "echo hi > /dev/nvme0n1")
     for c in "${dangerous[@]}"; do
         if ts_is_dangerous_command "$c"; then echo "ok - flagged dangerous: $c"; else echo "FAIL - should be flagged dangerous: $c"; fi
     done
@@ -85,16 +85,40 @@ run '
     STUBS="'"$HERE"'/stubs"
     PATH="$STUBS:$PATH"; . "'"$LIB"'"
     export TS_STUB_RESPONSE="sudo adduser Pippo"
-    got="$(ts_call_engine claude "crea utente Pippo")"
+    got="$(ts_call_engine claude "create user Pippo")"
     [ "$got" = "sudo adduser Pippo" ] && echo "ok - call_engine claude returns stub text" || echo "FAIL - call_engine claude (got: $got)"
+'
+
+run '
+    STUBS="'"$HERE"'/stubs"
+    log="$(mktemp)"
+    PATH="$STUBS:$PATH"; . "'"$LIB"'"
+    export TS_STUB_RESPONSE="sudo adduser Pippo"
+    export TS_STUB_ARG_LOG="$log"
+    ts_call_engine claude "create user Pippo" > /dev/null
+    args="$(cat "$log")"
+    rm -f "$log"
+    grep -Fxq -- "--disallowedTools" <<< "$args" && grep -Fxq -- "*" <<< "$args" && echo "ok - call_engine claude disables tools" || echo "FAIL - call_engine claude missing --disallowedTools * (args: $args)"
 '
 
 run '
     STUBS="'"$HERE"'/stubs"
     PATH="$STUBS:$PATH"; . "'"$LIB"'"
     export TS_STUB_RESPONSE="sudo adduser Pippo"
-    got="$(ts_call_engine codex "crea utente Pippo")"
+    got="$(ts_call_engine codex "create user Pippo")"
     [ "$got" = "sudo adduser Pippo" ] && echo "ok - call_engine codex returns stub text" || echo "FAIL - call_engine codex (got: $got)"
+'
+
+run '
+    STUBS="'"$HERE"'/stubs"
+    log="$(mktemp)"
+    PATH="$STUBS:$PATH"; . "'"$LIB"'"
+    export TS_STUB_RESPONSE="sudo adduser Pippo"
+    export TS_STUB_ARG_LOG="$log"
+    ts_call_engine codex "create user Pippo" > /dev/null
+    args="$(cat "$log")"
+    rm -f "$log"
+    grep -Fxq -- "-s" <<< "$args" && grep -Fxq -- "read-only" <<< "$args" && echo "ok - call_engine codex uses read-only sandbox" || echo "FAIL - call_engine codex missing -s read-only (args: $args)"
 '
 
 run '
@@ -131,7 +155,7 @@ sudo apt autoremove -y"
 
 run '
     . "'"$LIB"'"
-    raw="Per creare un nuovo utente puoi utilizzare il comando adduser seguito dal nome utente che desideri creare."
+    raw="To create a new user you can use the adduser command followed by the username you want to create."
     got="$(ts_parse_commands "$raw")"; rc=$?
     [ "$got" = "$raw" ] && [ "$rc" -eq 2 ] && echo "ok - parse_commands flags prose as unparseable" || echo "FAIL - parse_commands prose (rc=$rc)"
 '
@@ -161,9 +185,9 @@ run '
 run '
     . "'"$LIB"'"
     TS_HISTORY=()
-    ts_history_append "crea utente Pippo" "sudo adduser Pippo" "Adding user Pippo..."
+    ts_history_append "create user Pippo" "sudo adduser Pippo" "Adding user Pippo..."
     ctx="$(ts_history_context)"
-    [[ "$ctx" == *"crea utente Pippo"* && "$ctx" == *"sudo adduser Pippo"* ]] && echo "ok - history_context includes appended entry" || echo "FAIL - history_context missing entry (got: $ctx)"
+    [[ "$ctx" == *"create user Pippo"* && "$ctx" == *"sudo adduser Pippo"* ]] && echo "ok - history_context includes appended entry" || echo "FAIL - history_context missing entry (got: $ctx)"
 '
 
 run '
@@ -181,16 +205,16 @@ run '
 run '
     . "'"$LIB"'"
     TS_HISTORY=()
-    got="$(ts_build_prompt "crea utente Pippo")"
-    [[ "$got" == *"crea utente Pippo"* ]] && echo "ok - build_prompt includes instruction with no history" || echo "FAIL - build_prompt (got: $got)"
+    got="$(ts_build_prompt "create user Pippo")"
+    [[ "$got" == *"create user Pippo"* ]] && echo "ok - build_prompt includes instruction with no history" || echo "FAIL - build_prompt (got: $got)"
 '
 
 run '
     . "'"$LIB"'"
     TS_HISTORY=()
-    ts_history_append "crea utente Pippo" "sudo adduser Pippo" "done"
-    got="$(ts_build_prompt "ora aggiungilo al gruppo sudo")"
-    [[ "$got" == *"crea utente Pippo"* && "$got" == *"ora aggiungilo al gruppo sudo"* ]] && echo "ok - build_prompt folds in history" || echo "FAIL - build_prompt missing context (got: $got)"
+    ts_history_append "create user Pippo" "sudo adduser Pippo" "done"
+    got="$(ts_build_prompt "now add him to the sudo group")"
+    [[ "$got" == *"create user Pippo"* && "$got" == *"now add him to the sudo group"* ]] && echo "ok - build_prompt folds in history" || echo "FAIL - build_prompt missing context (got: $got)"
 '
 
 exit $FAIL

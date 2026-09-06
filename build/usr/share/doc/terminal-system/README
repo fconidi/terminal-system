@@ -7,28 +7,44 @@ Opens a tmux session with two panes:
 
   - Left pane: a normal shell. This is where commands actually run.
   - Right pane: type instructions in natural language, e.g.
-    "crea utente Pippo". The chosen AI engine translates the
+    "create user Pippo". The chosen AI engine translates the
     instruction into shell command(s), which are typed into the left
     pane in real time.
 
 Right-pane commands:
+  :cmd <command>          type a shell command manually, without AI
+  :manual                 prompt for a manual shell command
   :auto on|off            toggle automatic execution (default: off)
   :engine claude|codex    switch AI engine for the rest of the session
   :quit                   end the session
 
+Engine selection:
+  Start with "terminal-system codex" or "terminal-system claude" to
+  choose an engine explicitly. If the active engine is installed but
+  fails at runtime, for example because its quota is exhausted,
+  terminal-system tries the other available engine and switches to it
+  when the fallback call succeeds.
+
 Confirmation:
-  By default every generated command waits for you to press Enter (or
-  type "n" to cancel it) before it runs. With ":auto on", safe commands
-  run automatically — but a fixed set of dangerous patterns (rm -rf /,
-  mkfs, dd onto /dev, fork bombs, chmod -R 777 /, shutdown/reboot,
-  killall -9, userdel/groupdel on root/sudo/admin, iptables -F, writing
-  onto /dev/sdX) always stops for manual confirmation regardless of
-  auto-mode.
+  By default every generated or manual command waits for you to press
+  Enter (or type "e" to edit it, or "n" to cancel it) before it runs. With
+  ":auto on", safe commands run automatically — but a fixed set of
+  dangerous patterns (rm -rf /, mkfs, dd onto /dev, fork bombs,
+  chmod -R 777 /, shutdown/reboot, killall -9, userdel/groupdel on
+  root/sudo/admin, iptables -F, writes onto common block devices under
+  /dev) always stops for manual confirmation regardless of auto-mode.
+  When a command is likely to ask for input, such as sudo, ssh, passwd,
+  an editor, or a pager, focus moves to the left pane so passwords and
+  other interactive prompts are typed into the shell running the
+  command, not into the instruction pane. When the command finishes and
+  the left pane returns to the shell, focus moves back to the
+  instruction pane. Non-interactive commands keep focus on the
+  instruction pane so you can keep asking questions.
 
 Session memory:
   Instructions, generated commands, and recent left-pane output are
-  kept as context for the rest of the session (so "ora aggiungilo al
-  gruppo sudo" can refer back to a user you just created), but nothing
+  kept as context for the rest of the session (so "now add him to the
+  sudo group" can refer back to a user you just created), but nothing
   is written to disk — history disappears when the session ends.
 
 Requires:

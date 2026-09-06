@@ -41,17 +41,66 @@ TS_DANGER_PATTERNS=(
     '(userdel|groupdel)[[:space:]].*[[:space:]](root|sudo|admin)([[:space:]]|$)'
     '(^|[[:space:]])iptables[[:space:]]+-F([[:space:]]|$)'
     '>[[:space:]]*/dev/sd[a-z][0-9]*([[:space:]]|$)'
+    '>[[:space:]]*/dev/(sd[a-z][0-9]*|vd[a-z][0-9]*|xvd[a-z][0-9]*|nvme[0-9]+n[0-9]+(p[0-9]+)?|mmcblk[0-9]+(p[0-9]+)?)([[:space:]]|$)'
 )
+
+ts_rm_root_dangerous() {
+    local cmd="$1" words=() i word flags="" target=""
+    read -r -a words <<< "$cmd"
+    for ((i = 0; i < ${#words[@]}; i++)); do
+        [ "${words[$i]}" = "rm" ] || continue
+        for ((i = i + 1; i < ${#words[@]}; i++)); do
+            word="${words[$i]}"
+            [ "$word" = "--" ] && continue
+            if [[ "$word" == -* ]]; then
+                flags+="$word"
+                continue
+            fi
+            target="$word"
+            break
+        done
+        [[ "$flags" == *r* && "$flags" == *f* ]] || return 1
+        [[ "$target" = "/" || "$target" = "/*" ]] && return 0
+        return 1
+    done
+    return 1
+}
+
+ts_chmod_root_dangerous() {
+    local cmd="$1" words=() i word recursive=0 mode="" target=""
+    read -r -a words <<< "$cmd"
+    for ((i = 0; i < ${#words[@]}; i++)); do
+        [ "${words[$i]}" = "chmod" ] || continue
+        for ((i = i + 1; i < ${#words[@]}; i++)); do
+            word="${words[$i]}"
+            if [[ "$word" == -* ]]; then
+                [[ "$word" == *R* ]] && recursive=1
+                continue
+            fi
+            if [ -z "$mode" ]; then
+                mode="$word"
+                continue
+            fi
+            target="$word"
+            break
+        done
+        [ "$recursive" -eq 1 ] && [ "$mode" = "777" ] && [ "$target" = "/" ] && return 0
+        return 1
+    done
+    return 1
+}
 
 ts_is_dangerous_command() {
     local cmd="$1" p
+    ts_rm_root_dangerous "$cmd" && return 0
+    ts_chmod_root_dangerous "$cmd" && return 0
     for p in "${TS_DANGER_PATTERNS[@]}"; do
         [[ "$cmd" =~ $p ]] && return 0
     done
     return 1
 }
 
-TS_SYSTEM_PROMPT="Sei un traduttore da istruzioni in linguaggio naturale a comandi shell per Debian/Ubuntu Linux. Rispondi SOLO con i comandi shell necessari, uno per riga, senza spiegazioni, senza markdown, senza backtick. Se serve piu' di un comando per completare l'istruzione, elencali in ordine, uno per riga."
+TS_SYSTEM_PROMPT="You translate natural-language instructions into shell commands for Debian/Ubuntu Linux. Reply ONLY with the required shell commands, one per line, with no explanations, no markdown, and no backticks. If more than one command is needed, list them in order, one per line."
 
 ts_call_engine() {
     local engine="$1" prompt="$2" bin out rc tmpfile
@@ -113,8 +162,8 @@ TS_HISTORY_MAX="${TS_HISTORY_MAX:-5}"
 
 ts_history_append() {
     local instruction="$1" commands="$2" output="$3"
-    TS_HISTORY+=("istruzione: ${instruction}
-comandi:
+    TS_HISTORY+=("instruction: ${instruction}
+commands:
 ${commands}
 output:
 ${output}")
@@ -135,9 +184,9 @@ ts_build_prompt() {
     local instruction="$1" ctx
     ctx="$(ts_history_context)"
     if [ -n "$ctx" ]; then
-        printf 'Contesto sessione precedente:\n%s\nIstruzione attuale: %s\n' "$ctx" "$instruction"
+        printf 'Previous session context:\n%s\nCurrent instruction: %s\n' "$ctx" "$instruction"
     else
-        printf 'Istruzione attuale: %s\n' "$instruction"
+        printf 'Current instruction: %s\n' "$instruction"
     fi
 }
 
@@ -151,8 +200,51 @@ ts_type_into_pane() {
     done
 }
 
+ts_focus_pane() {
+    tmux select-pane -t "$1" > /dev/null 2>&1 || true
+}
+
+ts_command_needs_input() {
+    local cmd="$1"
+    [[ "$cmd" =~ (^|[[:space:]\;\&\|])sudo([[:space:]]|$) ]] && return 0
+    [[ "$cmd" =~ (^|[[:space:]\;\&\|])(su|passwd|ssh|scp|sftp|ftp|mysql|psql)([[:space:]]|$) ]] && return 0
+    [[ "$cmd" =~ (^|[[:space:]\;\&\|])(nano|vim|vi|less|more|man|top|htop)([[:space:]]|$) ]] && return 0
+    [[ "$cmd" =~ (^|[[:space:]\;\&\|])read([[:space:]]|$) ]] && return 0
+    return 1
+}
+
+ts_refocus_after_signal() {
+    local return_target="$1" signal="$2"
+    (
+        tmux wait-for "$signal" > /dev/null 2>&1 || exit 0
+        ts_pane_alive "$return_target" || exit 0
+        ts_focus_pane "$return_target"
+    ) &
+}
+
+ts_append_refocus_signal() {
+    local target="$1" signal="$2" quoted_signal suffix
+    printf -v quoted_signal '%q' "$signal"
+    suffix="; tmux wait-for -S $quoted_signal >/dev/null 2>&1"
+    ts_type_into_pane "$target" "$suffix"
+}
+
 ts_send_enter() {
-    tmux send-keys -t "$1" C-m
+    local target="$1" cmd="${2:-}" return_target="${3:-}" signal
+    if [ -z "$cmd" ]; then
+        tmux send-keys -t "$target" C-m
+        ts_focus_pane "$target"
+    elif ts_command_needs_input "$cmd"; then
+        if [ -n "$return_target" ] && ts_pane_alive "$return_target"; then
+            signal="terminal-system-refocus-$$-$RANDOM"
+            ts_refocus_after_signal "$return_target" "$signal"
+            ts_append_refocus_signal "$target" "$signal"
+        fi
+        tmux send-keys -t "$target" C-m
+        ts_focus_pane "$target"
+    else
+        tmux send-keys -t "$target" C-m
+    fi
 }
 
 ts_clear_typed_line() {
@@ -164,20 +256,47 @@ ts_capture_pane_tail() {
     tmux capture-pane -p -t "$target" -S "-$lines"
 }
 
+ts_pane_alive() {
+    local target="$1"
+    case "$target" in
+        %*) tmux list-panes -a -F '#{pane_id}' 2> /dev/null | grep -Fxq -- "$target" ;;
+        *)  tmux display-message -p -t "$target" '#{pane_id}' > /dev/null 2>&1 ;;
+    esac
+}
+
 ts_confirm_and_send() {
-    local target="$1" cmd="$2" reply
-    printf '[CONFERMA] %s\n' "$cmd"
-    printf 'invio = esegui, n = annulla: '
-    if ! IFS= read -r reply || [ "$reply" = "n" ] || [ "$reply" = "N" ]; then
-        ts_clear_typed_line "$target"
-        return 1
-    fi
-    ts_send_enter "$target"
-    return 0
+    local target="$1" cmd="$2" return_target="${3:-}" reply edited
+    while true; do
+        TS_CONFIRMED_COMMAND="$cmd"
+        printf '[CONFIRM] %s\n' "$cmd"
+        printf 'enter = run, e = edit, n = cancel: '
+        if ! IFS= read -r reply || [ "$reply" = "n" ] || [ "$reply" = "N" ]; then
+            ts_clear_typed_line "$target"
+            return 1
+        fi
+        case "$reply" in
+            e|E|m|M)
+                ts_clear_typed_line "$target"
+                printf 'edit command: '
+                if [ -t 0 ]; then
+                    IFS= read -e -i "$cmd" -r edited || return 1
+                else
+                    IFS= read -r edited || return 1
+                fi
+                [ -n "$edited" ] || return 1
+                cmd="$edited"
+                TS_CONFIRMED_COMMAND="$cmd"
+                ts_type_into_pane "$target" "$cmd"
+                continue
+                ;;
+        esac
+        ts_send_enter "$target" "$cmd" "$return_target"
+        return 0
+    done
 }
 
 ts_auto_send() {
-    local target="$1" delay="${2:-0.3}"
+    local target="$1" delay="${2:-0.3}" cmd="${3:-}" return_target="${4:-}"
     sleep "$delay"
-    ts_send_enter "$target"
+    ts_send_enter "$target" "$cmd" "$return_target"
 }

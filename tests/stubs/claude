@@ -1,4 +1,5 @@
 #!/bin/bash
 # Stub for tests: mimics `claude -p ...` by printing $TS_STUB_RESPONSE.
-printf '%s\n' "${TS_STUB_RESPONSE:-}"
-exit "${TS_STUB_EXIT:-0}"
+[ -n "${TS_STUB_ARG_LOG:-}" ] && printf '%s\n' "$@" > "$TS_STUB_ARG_LOG"
+printf '%s\n' "${TS_STUB_RESPONSE_CLAUDE:-${TS_STUB_RESPONSE:-}}"
+exit "${TS_STUB_EXIT_CLAUDE:-${TS_STUB_EXIT:-0}}"
