@@ -151,4 +151,46 @@ run '
     [ "$rc" -eq 2 ] && echo "ok - parse_commands flags empty input as unparseable" || echo "FAIL - parse_commands empty (rc=$rc)"
 '
 
+run '
+    . "'"$LIB"'"
+    TS_HISTORY=()
+    ctx="$(ts_history_context)"
+    [ -z "$ctx" ] && echo "ok - history_context empty with no history" || echo "FAIL - history_context should be empty (got: $ctx)"
+'
+
+run '
+    . "'"$LIB"'"
+    TS_HISTORY=()
+    ts_history_append "crea utente Pippo" "sudo adduser Pippo" "Adding user Pippo..."
+    ctx="$(ts_history_context)"
+    [[ "$ctx" == *"crea utente Pippo"* && "$ctx" == *"sudo adduser Pippo"* ]] && echo "ok - history_context includes appended entry" || echo "FAIL - history_context missing entry (got: $ctx)"
+'
+
+run '
+    . "'"$LIB"'"
+    TS_HISTORY=()
+    TS_HISTORY_MAX=2
+    ts_history_append "i1" "c1" "o1"
+    ts_history_append "i2" "c2" "o2"
+    ts_history_append "i3" "c3" "o3"
+    [ "${#TS_HISTORY[@]}" -eq 2 ] && echo "ok - history trims to TS_HISTORY_MAX" || echo "FAIL - history not trimmed (count: ${#TS_HISTORY[@]})"
+    ctx="$(ts_history_context)"
+    [[ "$ctx" != *"i1"* && "$ctx" == *"i2"* && "$ctx" == *"i3"* ]] && echo "ok - history keeps most recent entries" || echo "FAIL - wrong entries kept (got: $ctx)"
+'
+
+run '
+    . "'"$LIB"'"
+    TS_HISTORY=()
+    got="$(ts_build_prompt "crea utente Pippo")"
+    [[ "$got" == *"crea utente Pippo"* ]] && echo "ok - build_prompt includes instruction with no history" || echo "FAIL - build_prompt (got: $got)"
+'
+
+run '
+    . "'"$LIB"'"
+    TS_HISTORY=()
+    ts_history_append "crea utente Pippo" "sudo adduser Pippo" "done"
+    got="$(ts_build_prompt "ora aggiungilo al gruppo sudo")"
+    [[ "$got" == *"crea utente Pippo"* && "$got" == *"ora aggiungilo al gruppo sudo"* ]] && echo "ok - build_prompt folds in history" || echo "FAIL - build_prompt missing context (got: $got)"
+'
+
 exit $FAIL

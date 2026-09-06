@@ -107,3 +107,36 @@ ts_parse_commands() {
     printf '%s\n' "${out[@]}"
     return 0
 }
+
+TS_HISTORY=()
+TS_HISTORY_MAX="${TS_HISTORY_MAX:-5}"
+
+ts_history_append() {
+    local instruction="$1" commands="$2" output="$3"
+    TS_HISTORY+=("istruzione: ${instruction}
+comandi:
+${commands}
+output:
+${output}")
+    if [ "${#TS_HISTORY[@]}" -gt "$TS_HISTORY_MAX" ]; then
+        TS_HISTORY=("${TS_HISTORY[@]: -$TS_HISTORY_MAX}")
+    fi
+}
+
+ts_history_context() {
+    local entry
+    for entry in "${TS_HISTORY[@]:-}"; do
+        [ -z "$entry" ] && continue
+        printf '%s\n---\n' "$entry"
+    done
+}
+
+ts_build_prompt() {
+    local instruction="$1" ctx
+    ctx="$(ts_history_context)"
+    if [ -n "$ctx" ]; then
+        printf 'Contesto sessione precedente:\n%s\nIstruzione attuale: %s\n' "$ctx" "$instruction"
+    else
+        printf 'Istruzione attuale: %s\n' "$instruction"
+    fi
+}
