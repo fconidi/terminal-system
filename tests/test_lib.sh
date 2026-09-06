@@ -32,6 +32,7 @@ run '
     HOME="$tmphome"; PATH="/nonexistent"; . "'"$LIB"'"
     got="$(ts_resolve_bin codex)"
     [ "$got" = "$tmphome/.local/bin/codex" ] && echo "ok - resolve_bin falls back to ~/.local/bin" || echo "FAIL - resolve_bin fallback (got: $got)"
+    PATH="/usr/bin:/bin"
     rm -rf "$tmphome"
 '
 
