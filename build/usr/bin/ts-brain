@@ -58,8 +58,13 @@ ts_run_manual_command() {
 
 while true; do
     printf '> '
-    IFS= read -r instruction || break
+    if [ -t 0 ]; then
+        IFS= read -e -r instruction || break
+    else
+        IFS= read -r instruction || break
+    fi
     [ -z "$instruction" ] && continue
+    history -s "$instruction"
 
     case "$instruction" in
         :quit)
