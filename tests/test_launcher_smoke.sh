@@ -8,7 +8,8 @@ STUB_DIR="$HERE/stubs"
 SOCK="/tmp/ts-test-launcher-$$.sock"
 FAIL=0
 
-cleanup() { tmux -S "$SOCK" kill-server > /dev/null 2>&1; }
+STUB_TMUX_DIR="$(mktemp -d)"
+cleanup() { tmux -S "$SOCK" kill-server > /dev/null 2>&1; rm -rf "$STUB_TMUX_DIR"; }
 trap cleanup EXIT
 
 export PATH="$STUB_DIR:$BIN_DIR:$PATH"
@@ -31,6 +32,21 @@ check() {
 # since `exec tmux attach` would otherwise block this test.
 tmux() { command tmux -S "$SOCK" "$@"; }
 export -f tmux
+
+# `exec` does its own PATH lookup and never resolves shell functions (a
+# function has no separate process image for exec to switch to), so
+# terminal-system's own `exec tmux attach -t "$session"` would bypass the
+# tmux() function above entirely and reach the real, default tmux server.
+# A PATH-prepended stub *script* named tmux is what `exec tmux ...` actually
+# finds; the shell function still wins for the test's own plain (non-exec)
+# `tmux ...` calls, since function lookup takes precedence there. Both paths
+# then converge on the same isolated socket.
+cat > "$STUB_TMUX_DIR/tmux" << EOF
+#!/bin/bash
+exec /usr/bin/tmux -S "$SOCK" "\$@"
+EOF
+chmod +x "$STUB_TMUX_DIR/tmux"
+export PATH="$STUB_TMUX_DIR:$PATH"
 
 # Bootstrap the isolated server ourselves, before terminal-system starts it,
 # so we can force panes to spawn a plain (non-login) shell. On stock
