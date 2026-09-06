@@ -1,0 +1,78 @@
+#!/bin/bash
+# terminal-system/build/usr/bin/ts-brain
+# Instruction REPL for terminal-system. Runs as the foreground process of
+# the right-hand pane. Never called directly by a user — terminal-system
+# launches it with: ts-brain <tmux-session> <left-pane-target> <engine>
+set -uo pipefail
+
+LIBDIR="/usr/lib/terminal-system"
+[ -f "$LIBDIR/lib.sh" ] || LIBDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib/terminal-system" && pwd)"
+# shellcheck source=/usr/lib/terminal-system/lib.sh
+. "$LIBDIR/lib.sh"
+
+TS_SESSION="${1:?ts-brain: missing tmux session name}"
+TS_TARGET="${2:?ts-brain: missing target pane}"
+TS_ENGINE="${3:?ts-brain: missing engine}"
+TS_AUTO=0
+
+TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: nessun motore AI trovato (claude, codex)."; exit 1; }
+
+echo "terminal-system -- motore: $TS_ENGINE (auto: off)"
+echo "Scrivi un'istruzione, oppure :auto on|off, :engine claude|codex, :quit"
+
+while true; do
+    printf '> '
+    IFS= read -r instruction || break
+    [ -z "$instruction" ] && continue
+
+    case "$instruction" in
+        :quit)
+            tmux kill-session -t "$TS_SESSION" 2> /dev/null
+            exit 0
+            ;;
+        ":auto on")  TS_AUTO=1; echo "auto-mode: on"; continue ;;
+        ":auto off") TS_AUTO=0; echo "auto-mode: off"; continue ;;
+        ":engine claude"|":engine codex")
+            requested="${instruction#:engine }"
+            TS_ENGINE="$(ts_pick_engine "$requested")" || { echo "motore non disponibile"; continue; }
+            echo "motore: $TS_ENGINE"
+            continue
+            ;;
+    esac
+
+    prompt="$(ts_build_prompt "$instruction")"
+    if ! raw="$(ts_call_engine "$TS_ENGINE" "$prompt")"; then
+        echo "errore: $TS_ENGINE non ha risposto, riformula l'istruzione."
+        continue
+    fi
+
+    parsed="$(ts_parse_commands "$raw")"; prc=$?
+    if [ "$prc" -eq 2 ]; then
+        echo "risposta non chiara:"
+        echo "$parsed"
+        printf 'digitare comunque come comando singolo? invio=si, n=annulla: '
+        IFS= read -r reply
+        if [ "$reply" = "n" ] || [ "$reply" = "N" ]; then
+            continue
+        fi
+        parsed="$raw"
+    fi
+
+    executed=()
+    while IFS= read -r cmd; do
+        [ -z "$cmd" ] && continue
+        ts_type_into_pane "$TS_TARGET" "$cmd"
+        if [ "$TS_AUTO" -eq 1 ] && ! ts_is_dangerous_command "$cmd"; then
+            ts_auto_send "$TS_TARGET"
+            executed+=("$cmd")
+        else
+            if ts_confirm_and_send "$TS_TARGET" "$cmd"; then
+                executed+=("$cmd")
+            fi
+        fi
+    done <<< "$parsed"
+
+    sleep 0.2
+    output="$(ts_capture_pane_tail "$TS_TARGET" 20)"
+    ts_history_append "$instruction" "$(printf '%s\n' "${executed[@]:-}")" "$output"
+done
