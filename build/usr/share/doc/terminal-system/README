@@ -1,17 +1,17 @@
-terminal-system — AI-assisted two-pane terminal
-================================================
+terminal-system — AI-assisted two-panel terminal
+=================================================
 
 Usage: terminal-system [claude|codex]
 
-Opens a tmux session with two panes:
+Opens a tmux session with two panels:
 
-  - Left pane: a normal shell. This is where commands actually run.
-  - Right pane: type instructions in natural language, e.g.
+  - Left panel: a normal shell. This is where commands actually run.
+  - Right panel: type instructions in natural language, e.g.
     "create user Pippo". The chosen AI engine translates the
     instruction into shell command(s), which are typed into the left
-    pane in real time.
+    panel in real time.
 
-Right-pane commands:
+Right-panel commands:
   :cmd <command>          type a shell command manually, without AI
   :manual                 prompt for a manual shell command
   :auto on|off            toggle automatic execution (default: off)
@@ -34,15 +34,15 @@ Confirmation:
   root/sudo/admin, iptables -F, writes onto common block devices under
   /dev) always stops for manual confirmation regardless of auto-mode.
   When a command is likely to ask for input, such as sudo, ssh, passwd,
-  an editor, or a pager, focus moves to the left pane so passwords and
+  an editor, or a pager, focus moves to the left panel so passwords and
   other interactive prompts are typed into the shell running the
-  command, not into the instruction pane. When the command finishes and
-  the left pane returns to the shell, focus moves back to the
-  instruction pane. Non-interactive commands keep focus on the
-  instruction pane so you can keep asking questions.
+  command, not into the instruction panel. When the command finishes and
+  the left panel returns to the shell, focus moves back to the
+  instruction panel. Non-interactive commands keep focus on the
+  instruction panel so you can keep asking questions.
 
 Session memory:
-  Instructions, generated commands, and recent left-pane output are
+  Instructions, generated commands, and recent left-panel output are
   kept as context for the rest of the session (so "now add him to the
   sudo group" can refer back to a user you just created), but nothing
   is written to disk — history disappears when the session ends.
