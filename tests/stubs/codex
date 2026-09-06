@@ -1,0 +1,12 @@
+#!/bin/bash
+# Stub for tests: mimics `codex exec ... --output-last-message FILE` by
+# writing $TS_STUB_RESPONSE to the file named after --output-last-message.
+out=""
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+    if [ "${args[$i]}" = "--output-last-message" ]; then
+        out="${args[$((i + 1))]}"
+    fi
+done
+[ -n "$out" ] && printf '%s\n' "${TS_STUB_RESPONSE:-}" > "$out"
+exit "${TS_STUB_EXIT:-0}"

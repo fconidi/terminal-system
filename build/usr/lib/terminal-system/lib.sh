@@ -50,3 +50,32 @@ ts_is_dangerous_command() {
     done
     return 1
 }
+
+TS_SYSTEM_PROMPT="Sei un traduttore da istruzioni in linguaggio naturale a comandi shell per Debian/Ubuntu Linux. Rispondi SOLO con i comandi shell necessari, uno per riga, senza spiegazioni, senza markdown, senza backtick. Se serve piu' di un comando per completare l'istruzione, elencali in ordine, uno per riga."
+
+ts_call_engine() {
+    local engine="$1" prompt="$2" bin out rc tmpfile
+    bin="$(ts_resolve_bin "$engine")" || return 1
+
+    case "$engine" in
+        claude)
+            out="$("$bin" -p --disallowedTools "*" --system-prompt "$TS_SYSTEM_PROMPT" -- "$prompt" 2> /dev/null)"
+            rc=$?
+            ;;
+        codex)
+            tmpfile="$(mktemp)"
+            "$bin" exec -s read-only --output-last-message "$tmpfile" -- "$TS_SYSTEM_PROMPT
+$prompt" > /dev/null 2>&1
+            rc=$?
+            out="$(cat "$tmpfile" 2> /dev/null)"
+            rm -f "$tmpfile"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
+    [ $rc -eq 0 ] && [ -n "$out" ] || return 1
+    printf '%s\n' "$out"
+    return 0
+}

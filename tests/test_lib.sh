@@ -81,4 +81,32 @@ run '
     done
 '
 
+run '
+    STUBS="'"$HERE"'/stubs"
+    PATH="$STUBS:$PATH"; . "'"$LIB"'"
+    export TS_STUB_RESPONSE="sudo adduser Pippo"
+    got="$(ts_call_engine claude "crea utente Pippo")"
+    [ "$got" = "sudo adduser Pippo" ] && echo "ok - call_engine claude returns stub text" || echo "FAIL - call_engine claude (got: $got)"
+'
+
+run '
+    STUBS="'"$HERE"'/stubs"
+    PATH="$STUBS:$PATH"; . "'"$LIB"'"
+    export TS_STUB_RESPONSE="sudo adduser Pippo"
+    got="$(ts_call_engine codex "crea utente Pippo")"
+    [ "$got" = "sudo adduser Pippo" ] && echo "ok - call_engine codex returns stub text" || echo "FAIL - call_engine codex (got: $got)"
+'
+
+run '
+    PATH="/nonexistent"; HOME="/nonexistent"; . "'"$LIB"'"
+    if ts_call_engine claude "x" > /dev/null 2>&1; then echo "FAIL - call_engine should fail when binary missing"; else echo "ok - call_engine fails cleanly when binary missing"; fi
+'
+
+run '
+    STUBS="'"$HERE"'/stubs"
+    PATH="$STUBS:$PATH"; . "'"$LIB"'"
+    export TS_STUB_RESPONSE=""
+    if ts_call_engine claude "x" > /dev/null 2>&1; then echo "FAIL - call_engine should fail on empty response"; else echo "ok - call_engine fails cleanly on empty response"; fi
+'
+
 exit $FAIL
