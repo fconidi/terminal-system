@@ -50,16 +50,16 @@ while true; do
     if [ "$prc" -eq 2 ]; then
         echo "risposta non chiara:"
         echo "$parsed"
-        printf 'digitare comunque come comando singolo? invio=si, n=annulla: '
-        IFS= read -r reply
-        if [ "$reply" = "n" ] || [ "$reply" = "N" ]; then
+        printf 'procedere comunque, confermando ogni riga singolarmente? invio=si, n=annulla: '
+        if ! IFS= read -r reply || [ "$reply" = "n" ] || [ "$reply" = "N" ]; then
             continue
         fi
         parsed="$raw"
     fi
 
     executed=()
-    while IFS= read -r cmd; do
+    mapfile -t cmd_lines <<< "$parsed"
+    for cmd in "${cmd_lines[@]}"; do
         [ -z "$cmd" ] && continue
         ts_type_into_pane "$TS_TARGET" "$cmd"
         if [ "$TS_AUTO" -eq 1 ] && ! ts_is_dangerous_command "$cmd"; then
@@ -70,7 +70,7 @@ while true; do
                 executed+=("$cmd")
             fi
         fi
-    done <<< "$parsed"
+    done
 
     sleep 0.2
     output="$(ts_capture_pane_tail "$TS_TARGET" 20)"

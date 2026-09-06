@@ -31,6 +31,22 @@ not_contains() {
         echo "ok - $desc"
     fi
 }
+check_count() {
+    # Asserts that $needle occurs exactly $want times in $got. Used where a
+    # plain contains/not_contains would be ambiguous: e.g. a still-pending,
+    # unexecuted "echo SECOND-CMD" typed into the pane already contains the
+    # substring "SECOND-CMD", so absence-of-substring can't distinguish
+    # "typed but not yet run" from "already executed" (which adds a second,
+    # standalone "SECOND-CMD" output line).
+    local desc="$1" got="$2" needle="$3" want="$4" n
+    n="$(grep -o -F -- "$needle" <<< "$got" | wc -l)"
+    if [ "$n" -eq "$want" ]; then
+        echo "ok - $desc"
+    else
+        echo "FAIL - $desc (expected '$needle' to occur $want time(s), occurred $n; got: '$got')"
+        FAIL=1
+    fi
+}
 
 start_session() {
     local name="$1"
@@ -115,6 +131,41 @@ not_contains "scenario 5: nothing typed into left pane before confirmation" "$le
 tmux -S "$SOCK" send-keys -t s5:0.1 "n" C-m
 sleep 0.2
 tmux -S "$SOCK" send-keys -t s5:0.1 ":quit" C-m
+sleep 0.2
+
+# --- Scenario 6: multi-command response with a dangerous first command ---
+# Regression test for a fixed bug: `while IFS= read -r cmd; do ... done <<<
+# "$parsed"` used to redirect stdin for the WHOLE loop body, so
+# ts_confirm_and_send's own `IFS= read -r reply` silently consumed the NEXT
+# queued command line as if it were the human's y/n answer, defeating the
+# danger guardrail for any multi-command response. Not in auto-mode: this is
+# the plain confirm-by-default path, which the bug affected identically.
+export TS_STUB_RESPONSE=$'mkfs.ext4 /dev/nonexistent-ts-test-device\necho SECOND-CMD'
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+start_session s6
+tmux -S "$SOCK" send-keys -t s6:0.1 "prepara il nuovo disco" C-m
+sleep 1.2
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s6:0.1 -S -20)"
+check "scenario 6: dangerous first command gets its own confirmation prompt" "$right_out" "[CONFERMA] mkfs.ext4"
+# -J joins soft-wrapped lines: the pane is narrow relative to the shell
+# prompt, so this long command can wrap mid-word without it.
+left_before="$(tmux -S "$SOCK" capture-pane -p -J -t s6:0.0 -S -10)"
+check "scenario 6: dangerous first command is typed (pending) into left pane" "$left_before" "mkfs.ext4 /dev/nonexistent-ts-test-device"
+not_contains "scenario 6: dangerous first command was NOT executed before confirmation" "$left_before" "No such file or directory"
+
+tmux -S "$SOCK" send-keys -t s6:0.1 "n" C-m
+sleep 0.6
+right_out2="$(tmux -S "$SOCK" capture-pane -p -t s6:0.1 -S -20)"
+check "scenario 6: declining the first command reaches the second command's own confirmation (not swallowed)" "$right_out2" "[CONFERMA] echo SECOND-CMD"
+left_after_n="$(tmux -S "$SOCK" capture-pane -p -J -t s6:0.0 -S -10)"
+not_contains "scenario 6: declined dangerous command still did not execute" "$left_after_n" "No such file or directory"
+check_count "scenario 6: second command is only pending (typed once), not yet executed" "$left_after_n" "SECOND-CMD" 1
+
+tmux -S "$SOCK" send-keys -t s6:0.1 C-m
+sleep 0.6
+left_final="$(tmux -S "$SOCK" capture-pane -p -J -t s6:0.0 -S -10)"
+check_count "scenario 6: second command executes once independently confirmed (typed line + output line)" "$left_final" "SECOND-CMD" 2
+tmux -S "$SOCK" send-keys -t s6:0.1 ":quit" C-m
 sleep 0.2
 
 exit $FAIL
