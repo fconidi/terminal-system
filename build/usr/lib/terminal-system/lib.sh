@@ -26,3 +26,27 @@ ts_pick_engine() {
     fi
     return 1
 }
+
+TS_DANGER_PATTERNS=(
+    '(^|[[:space:]])rm[[:space:]]+-[a-z]*r[a-z]*f[a-z]*[[:space:]]+/[[:space:]]*$'
+    '(^|[[:space:]])rm[[:space:]]+-[a-z]*f[a-z]*r[a-z]*[[:space:]]+/[[:space:]]*$'
+    '(^|[[:space:]])rm[[:space:]]+-[a-z]*r[a-z]*f[a-z]*[[:space:]]+/\*'
+    '(^|[[:space:]])rm[[:space:]]+-[a-z]*f[a-z]*r[a-z]*[[:space:]]+/\*'
+    '(^|[[:space:]])mkfs(\.[a-zA-Z0-9]+)?[[:space:]]'
+    '(^|[[:space:]])dd[[:space:]].*of=/dev/'
+    ':\(\)[[:space:]]*\{[[:space:]]*:\|:\&[[:space:]]*\}[[:space:]]*\;[[:space:]]*:'
+    '(^|[[:space:]])chmod[[:space:]]+-R[[:space:]]+777[[:space:]]+/[[:space:]]*$'
+    '(^|[[:space:]])(shutdown|reboot|halt|poweroff)([[:space:]]|$)'
+    '(^|[[:space:]])killall[[:space:]]+-9([[:space:]]|$)'
+    '(userdel|groupdel)[[:space:]].*[[:space:]](root|sudo|admin)([[:space:]]|$)'
+    '(^|[[:space:]])iptables[[:space:]]+-F([[:space:]]|$)'
+    '>[[:space:]]*/dev/sd[a-z][0-9]*([[:space:]]|$)'
+)
+
+ts_is_dangerous_command() {
+    local cmd="$1" p
+    for p in "${TS_DANGER_PATTERNS[@]}"; do
+        [[ "$cmd" =~ $p ]] && return 0
+    done
+    return 1
+}

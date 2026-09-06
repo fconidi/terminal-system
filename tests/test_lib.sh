@@ -6,79 +6,78 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$HERE/../build/usr/lib/terminal-system/lib.sh"
 FAIL=0
 
-check() {
-    local desc="$1" got="$2" want="$3"
-    if [ "$got" = "$want" ]; then
-        echo "ok - $desc"
-    else
-        echo "FAIL - $desc (got: '$got', want: '$want')"
-        FAIL=1
-    fi
+run() {
+    local out
+    out="$(bash -c "$1")"
+    printf '%s\n' "$out"
+    grep -q '^FAIL' <<< "$out" && FAIL=1
+    return 0
 }
 
-test_resolve_bin_via_path() {
-    local tmpdir; tmpdir="$(mktemp -d)"
-    printf '#!/bin/bash\necho fake\n' > "$tmpdir/claude"
+run '
+    tmpdir="$(mktemp -d)"
+    printf "#!/bin/bash\necho fake\n" > "$tmpdir/claude"
     chmod +x "$tmpdir/claude"
-    ( PATH="$tmpdir:$PATH"; . "$LIB"
-      got="$(ts_resolve_bin claude)"
-      check "resolve_bin finds claude on PATH" "$got" "$tmpdir/claude" )
+    PATH="$tmpdir:$PATH"; . "'"$LIB"'"
+    got="$(ts_resolve_bin claude)"
+    [ "$got" = "$tmpdir/claude" ] && echo "ok - resolve_bin finds claude on PATH" || echo "FAIL - resolve_bin on PATH (got: $got)"
     rm -rf "$tmpdir"
-}
+'
 
-test_resolve_bin_via_local_bin_fallback() {
-    local tmphome; tmphome="$(mktemp -d)"
+run '
+    tmphome="$(mktemp -d)"
     mkdir -p "$tmphome/.local/bin"
-    printf '#!/bin/bash\necho fake\n' > "$tmphome/.local/bin/codex"
+    printf "#!/bin/bash\necho fake\n" > "$tmphome/.local/bin/codex"
     chmod +x "$tmphome/.local/bin/codex"
-    ( HOME="$tmphome"; PATH="/nonexistent"; . "$LIB"
-      got="$(ts_resolve_bin codex)"
-      check "resolve_bin falls back to ~/.local/bin" "$got" "$tmphome/.local/bin/codex" )
+    HOME="$tmphome"; PATH="/nonexistent"; . "'"$LIB"'"
+    got="$(ts_resolve_bin codex)"
+    [ "$got" = "$tmphome/.local/bin/codex" ] && echo "ok - resolve_bin falls back to ~/.local/bin" || echo "FAIL - resolve_bin fallback (got: $got)"
     rm -rf "$tmphome"
-}
+'
 
-test_resolve_bin_not_found() {
-    ( PATH="/nonexistent"; HOME="/nonexistent"; . "$LIB"
-      if ts_resolve_bin claude > /dev/null 2>&1; then
-          echo "FAIL - resolve_bin should fail when nothing is installed"; FAIL=1
-      else
-          echo "ok - resolve_bin fails cleanly when nothing is installed"
-      fi )
-}
+run '
+    PATH="/nonexistent"; HOME="/nonexistent"; . "'"$LIB"'"
+    if ts_resolve_bin claude > /dev/null 2>&1; then echo "FAIL - resolve_bin should fail when nothing installed"; else echo "ok - resolve_bin fails cleanly"; fi
+'
 
-test_pick_engine_requested_available() {
-    local tmpdir; tmpdir="$(mktemp -d)"
-    printf '#!/bin/bash\n' > "$tmpdir/claude"; chmod +x "$tmpdir/claude"
-    printf '#!/bin/bash\n' > "$tmpdir/codex"; chmod +x "$tmpdir/codex"
-    ( PATH="$tmpdir:$PATH"; . "$LIB"
-      got="$(ts_pick_engine claude)"
-      check "pick_engine returns requested engine when available" "$got" "claude" )
+run '
+    tmpdir="$(mktemp -d)"
+    printf "#!/bin/bash\n" > "$tmpdir/claude"; chmod +x "$tmpdir/claude"
+    printf "#!/bin/bash\n" > "$tmpdir/codex"; chmod +x "$tmpdir/codex"
+    PATH="$tmpdir:$PATH"; . "'"$LIB"'"
+    got="$(ts_pick_engine claude)"
+    [ "$got" = "claude" ] && echo "ok - pick_engine returns requested when available" || echo "FAIL - pick_engine requested (got: $got)"
     rm -rf "$tmpdir"
-}
+'
 
-test_pick_engine_falls_back() {
-    local tmpdir; tmpdir="$(mktemp -d)"
-    printf '#!/bin/bash\n' > "$tmpdir/codex"; chmod +x "$tmpdir/codex"
-    ( PATH="$tmpdir:$PATH"; . "$LIB"
-      got="$(ts_pick_engine claude)"
-      check "pick_engine falls back to codex when claude missing" "$got" "codex" )
+run '
+    tmpdir="$(mktemp -d)"
+    printf "#!/bin/bash\n" > "$tmpdir/codex"; chmod +x "$tmpdir/codex"
+    PATH="$tmpdir:/usr/bin:/bin"; HOME="/nonexistent"; . "'"$LIB"'"
+    got="$(ts_pick_engine claude)"
+    [ "$got" = "codex" ] && echo "ok - pick_engine falls back to codex" || echo "FAIL - pick_engine fallback (got: $got)"
     rm -rf "$tmpdir"
-}
+'
 
-test_pick_engine_none_available() {
-    ( PATH="/nonexistent"; HOME="/nonexistent"; . "$LIB"
-      if ts_pick_engine claude > /dev/null 2>&1; then
-          echo "FAIL - pick_engine should fail when neither engine is installed"; FAIL=1
-      else
-          echo "ok - pick_engine fails cleanly when neither engine is installed"
-      fi )
-}
+run '
+    PATH="/nonexistent"; HOME="/nonexistent"; . "'"$LIB"'"
+    if ts_pick_engine claude > /dev/null 2>&1; then echo "FAIL - pick_engine should fail when neither installed"; else echo "ok - pick_engine fails cleanly"; fi
+'
 
-test_resolve_bin_via_path
-test_resolve_bin_via_local_bin_fallback
-test_resolve_bin_not_found
-test_pick_engine_requested_available
-test_pick_engine_falls_back
-test_pick_engine_none_available
+run '
+    . "'"$LIB"'"
+    dangerous=("rm -rf /" "rm -rf /*" "rm -fr /" "mkfs.ext4 /dev/sdb1" "dd if=/dev/zero of=/dev/sda" ":(){ :|:& };:" "chmod -R 777 /" "shutdown -h now" "reboot" "killall -9 sshd" "userdel -r root" "iptables -F" "echo hi > /dev/sda")
+    for c in "${dangerous[@]}"; do
+        if ts_is_dangerous_command "$c"; then echo "ok - flagged dangerous: $c"; else echo "FAIL - should be flagged dangerous: $c"; fi
+    done
+'
+
+run '
+    . "'"$LIB"'"
+    safe=("sudo adduser Pippo" "sudo usermod -aG sudo Pippo" "apt update" "apt-get upgrade -y" "apt-get autoremove -y" "rm -rf /home/pippo/tmp" "rm -rf ./build" "systemctl restart networking" "ls -la /dev/sda1" "df -h" "userdel pippo")
+    for c in "${safe[@]}"; do
+        if ts_is_dangerous_command "$c"; then echo "FAIL - false positive: $c"; else echo "ok - correctly not flagged: $c"; fi
+    done
+'
 
 exit $FAIL
