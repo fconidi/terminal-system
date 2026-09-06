@@ -47,9 +47,12 @@ ts_run_manual_command() {
     fi
     ts_type_into_pane "$TS_TARGET" "$cmd"
     if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR"; then
+        echo "-> ran: ${TS_CONFIRMED_COMMAND:-$cmd}"
         sleep 0.2
         output="$(ts_capture_pane_tail "$TS_TARGET" 20)"
         ts_history_append "manual command" "${TS_CONFIRMED_COMMAND:-$cmd}" "$output"
+    else
+        echo "-> cancelled: $cmd"
     fi
 }
 
@@ -135,10 +138,14 @@ while true; do
         ts_type_into_pane "$TS_TARGET" "$cmd"
         if [ "$TS_AUTO" -eq 1 ] && [ "$force_manual" -eq 0 ] && ! ts_is_dangerous_command "$cmd"; then
             ts_auto_send "$TS_TARGET" 0.3 "$cmd" "$TS_OPERATOR"
+            echo "-> ran: $cmd"
             executed+=("$cmd")
         else
             if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR"; then
+                echo "-> ran: ${TS_CONFIRMED_COMMAND:-$cmd}"
                 executed+=("${TS_CONFIRMED_COMMAND:-$cmd}")
+            else
+                echo "-> cancelled: $cmd"
             fi
         fi
     done
