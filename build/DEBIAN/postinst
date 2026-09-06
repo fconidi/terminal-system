@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    configure)
+        echo ""
+        echo "=================================================="
+        echo "  terminal-system 1.0.0 installed"
+        echo "=================================================="
+        echo "  Requires claude and/or codex CLI already installed."
+        echo "  Start with:  terminal-system [claude|codex]"
+        echo "  Help:        terminal-system --help"
+        echo ""
+        ;;
+esac
+exit 0

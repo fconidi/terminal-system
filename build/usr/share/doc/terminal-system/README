@@ -1,0 +1,36 @@
+terminal-system — AI-assisted two-pane terminal
+================================================
+
+Usage: terminal-system [claude|codex]
+
+Opens a tmux session with two panes:
+
+  - Left pane: a normal shell. This is where commands actually run.
+  - Right pane: type instructions in natural language, e.g.
+    "crea utente Pippo". The chosen AI engine translates the
+    instruction into shell command(s), which are typed into the left
+    pane in real time.
+
+Right-pane commands:
+  :auto on|off            toggle automatic execution (default: off)
+  :engine claude|codex    switch AI engine for the rest of the session
+  :quit                   end the session
+
+Confirmation:
+  By default every generated command waits for you to press Enter (or
+  type "n" to cancel it) before it runs. With ":auto on", safe commands
+  run automatically — but a fixed set of dangerous patterns (rm -rf /,
+  mkfs, dd onto /dev, fork bombs, chmod -R 777 /, shutdown/reboot,
+  killall -9, userdel/groupdel on root/sudo/admin, iptables -F, writing
+  onto /dev/sdX) always stops for manual confirmation regardless of
+  auto-mode.
+
+Session memory:
+  Instructions, generated commands, and recent left-pane output are
+  kept as context for the rest of the session (so "ora aggiungilo al
+  gruppo sudo" can refer back to a user you just created), but nothing
+  is written to disk — history disappears when the session ends.
+
+Requires:
+  The claude and/or codex CLI already installed and authenticated.
+  Neither is a hard package dependency.

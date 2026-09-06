@@ -1,0 +1,27 @@
+Package: terminal-system
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: all
+Depends: bash, tmux
+Maintainer: Franco Conidi aka edmond <fconidi@gmail.com>
+Homepage: https://www.syslinuxos.com
+Description: AI-assisted two-pane terminal (natural language -> shell commands)
+ A tmux two-pane layout: the right pane takes instructions in natural
+ language, an AI engine (Claude Code or Codex, called non-interactively
+ and with no tool access of its own) translates each instruction into
+ shell command(s), and those commands are typed into the left pane in
+ real time.
+ .
+ Every command is confirmed manually by default; an opt-in auto-mode
+ (":auto on") executes safe commands automatically, but a fixed set of
+ dangerous patterns (rm -rf /, mkfs, dd onto /dev, fork bombs, and
+ similar) always forces manual confirmation regardless of auto-mode.
+ .
+ Session instructions and commands are kept as context for follow-up
+ instructions within the same session, and are never written to disk.
+ .
+ Requires the "claude" and/or "codex" CLI to already be installed and
+ authenticated; neither is a hard package dependency since neither ships
+ as a .deb on this system.
+Installed-Size: 40
