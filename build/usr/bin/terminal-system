@@ -4,7 +4,7 @@
 # instructions, left pane receives the generated shell commands.
 set -uo pipefail
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 SCRIPT_LIBDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib/terminal-system" && pwd)"
 if [ -f "$SCRIPT_LIBDIR/lib.sh" ]; then
     LIBDIR="$SCRIPT_LIBDIR"
