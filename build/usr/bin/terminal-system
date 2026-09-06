@@ -1,0 +1,57 @@
+#!/bin/bash
+# terminal-system/build/usr/bin/terminal-system
+# AI-assisted two-pane terminal: right pane takes natural-language
+# instructions, left pane receives the generated shell commands.
+set -uo pipefail
+
+VERSION="1.0.0"
+LIBDIR="/usr/lib/terminal-system"
+[ -f "$LIBDIR/lib.sh" ] || LIBDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib/terminal-system" && pwd)"
+# shellcheck source=/usr/lib/terminal-system/lib.sh
+. "$LIBDIR/lib.sh"
+
+die() { echo "terminal-system: $*" >&2; exit 1; }
+
+cmd_start() {
+    local requested="${1:-}" engine session
+    [ -n "${TMUX:-}" ] && die "gia' dentro una sessione tmux -- esci prima (Ctrl+b d)."
+    command -v tmux > /dev/null 2>&1 || die "tmux non installato."
+
+    if [ -n "$requested" ]; then
+        engine="$(ts_pick_engine "$requested")" || die "nessun motore AI trovato (claude, codex)."
+    else
+        engine="$(ts_pick_engine claude)" 2> /dev/null || engine="$(ts_pick_engine codex)" 2> /dev/null || die "nessun motore AI trovato (claude, codex)."
+    fi
+
+    session="terminal-system-$$"
+    tmux new-session -d -s "$session" -n main
+    tmux split-window -h -t "$session:0"
+    tmux send-keys -t "$session:0.1" "exec ts-brain '$session' '$session:0.0' '$engine'" C-m
+    exec tmux attach -t "$session"
+}
+
+cmd_help() {
+    cat << EOF
+terminal-system $VERSION -- terminale a due pannelli assistito da AI
+
+Uso: terminal-system [claude|codex]
+
+  Pannello sinistro: shell normale, dove i comandi vengono digitati ed eseguiti.
+  Pannello destro: scrivi istruzioni in linguaggio naturale.
+
+  Nel pannello destro:
+    :auto on|off            attiva/disattiva esecuzione automatica
+    :engine claude|codex    cambia motore AI a sessione avviata
+    :quit                   chiude la sessione
+
+  I comandi riconosciuti come pericolosi (rm -rf /, mkfs, dd su /dev, ecc.)
+  chiedono sempre conferma manuale, anche in auto-mode.
+EOF
+}
+
+case "${1:-}" in
+    -h|--help|help) cmd_help ;;
+    -V|--version|version) echo "terminal-system $VERSION" ;;
+    claude|codex|"") cmd_start "${1:-}" ;;
+    *) cmd_help; exit 1 ;;
+esac
