@@ -72,4 +72,29 @@ else
     echo "ok - confirm_and_send with 'n' cancels the command"
 fi
 
+ts_type_into_pane "t:0.0" "echo eof-not-confirmed"
+ts_confirm_and_send "t:0.0" "echo eof-not-confirmed" < /dev/null > /dev/null
+rc=$?
+if [ "$rc" -eq 1 ]; then
+    echo "ok - confirm_and_send returns 1 on closed stdin (EOF)"
+else
+    echo "FAIL - confirm_and_send returned $rc on closed stdin (EOF), expected 1"; FAIL=1
+fi
+sleep 0.3
+out="$(ts_capture_pane_tail "t:0.0" 5)"
+if [[ "$out" == *"eof-not-confirmed"* ]]; then
+    echo "FAIL - confirm_and_send on closed stdin should not run the command"; FAIL=1
+else
+    echo "ok - confirm_and_send on closed stdin cancels the command"
+fi
+
+ts_type_into_pane "t:0.0" "echo one; echo two"
+sleep 0.2
+# Use -J (join wrapped lines) directly: the pane is narrow relative to the
+# shell's prompt, so this line can visually wrap mid-command; -J reconstructs
+# the original logical line so the check isn't sensitive to terminal width.
+out="$(tmux capture-pane -p -J -t "t:0.0" -S -5)"
+check "type_into_pane preserves a literal semicolon" "$out" "echo one; echo two"
+ts_clear_typed_line "t:0.0"
+
 exit $FAIL

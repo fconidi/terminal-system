@@ -145,6 +145,7 @@ ts_type_into_pane() {
     local target="$1" cmd="$2" delay="${3:-0.004}" i char
     for ((i = 0; i < ${#cmd}; i++)); do
         char="${cmd:$i:1}"
+        [ "$char" = ';' ] && char='\;'
         tmux send-keys -t "$target" -l -- "$char"
         sleep "$delay"
     done
@@ -167,8 +168,7 @@ ts_confirm_and_send() {
     local target="$1" cmd="$2" reply
     printf '[CONFERMA] %s\n' "$cmd"
     printf 'invio = esegui, n = annulla: '
-    IFS= read -r reply
-    if [ "$reply" = "n" ] || [ "$reply" = "N" ]; then
+    if ! IFS= read -r reply || [ "$reply" = "n" ] || [ "$reply" = "N" ]; then
         ts_clear_typed_line "$target"
         return 1
     fi
