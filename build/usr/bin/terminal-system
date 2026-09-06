@@ -29,6 +29,8 @@ cmd_start() {
 
     session="terminal-system-$$"
     left_pane="$(tmux new-session -d -s "$session" -n main -P -F '#{pane_id}')" || die "could not create the tmux session."
+    tmux set-option -t "$session" mouse on
+    tmux set-option -t "$session" history-limit 10000
     right_pane="$(tmux split-window -h -t "$left_pane" -P -F '#{pane_id}')" || die "could not create the tmux pane."
     tmux send-keys -t "$right_pane" "exec ts-brain '$session' '$left_pane' '$engine'" C-m
     exec tmux attach -t "$session"
