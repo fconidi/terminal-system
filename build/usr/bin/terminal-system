@@ -38,14 +38,14 @@ cmd_start() {
 
 cmd_help() {
     cat << EOF
-terminal-system $VERSION -- AI-assisted two-pane terminal
+terminal-system $VERSION -- AI-assisted two-panel terminal
 
 Usage: terminal-system [claude|codex]
 
-  Left pane: normal shell, where generated commands are typed and run.
-  Right pane: type natural-language instructions.
+  Left panel: normal shell, where generated commands are typed and run.
+  Right panel: type natural-language instructions.
 
-  Right-pane commands:
+  Right-panel commands:
     :cmd <command>          type a shell command manually, without AI
     :manual                 prompt for a manual shell command
     :auto on|off            toggle automatic execution

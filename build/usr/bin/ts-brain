@@ -22,6 +22,7 @@ TS_AUTO=0
 force_manual=0
 
 TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: no AI engine found (claude, codex)."; exit 1; }
+TS_SHELL_NAME="$(ts_pane_shell_name "$TS_TARGET")"
 
 echo "terminal-system -- engine: $TS_ENGINE (auto: off)"
 echo "Type an instruction, or :cmd <command>, :manual, :auto on|off, :engine claude|codex, :quit"
@@ -41,12 +42,13 @@ ts_run_manual_command() {
         return 0
     fi
     if ! ts_pane_alive "$TS_TARGET"; then
-        echo "left pane unavailable; closing the session."
+        echo "left panel unavailable; closing the session."
         tmux kill-session -t "$TS_SESSION" 2> /dev/null
         exit 0
     fi
     ts_type_into_pane "$TS_TARGET" "$cmd"
     if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR"; then
+        ts_wait_pane_idle "$TS_TARGET" "$TS_SHELL_NAME" 120 || echo "(still running after 120s, continuing anyway)"
         echo "-> ran: ${TS_CONFIRMED_COMMAND:-$cmd}"
         sleep 0.2
         output="$(ts_capture_pane_tail "$TS_TARGET" 20)"
@@ -136,17 +138,19 @@ while true; do
     for cmd in "${cmd_lines[@]}"; do
         [ -z "$cmd" ] && continue
         if ! ts_pane_alive "$TS_TARGET"; then
-            echo "left pane unavailable; closing the session."
+            echo "left panel unavailable; closing the session."
             tmux kill-session -t "$TS_SESSION" 2> /dev/null
             exit 0
         fi
         ts_type_into_pane "$TS_TARGET" "$cmd"
         if [ "$TS_AUTO" -eq 1 ] && [ "$force_manual" -eq 0 ] && ! ts_is_dangerous_command "$cmd"; then
             ts_auto_send "$TS_TARGET" 0.3 "$cmd" "$TS_OPERATOR"
+            ts_wait_pane_idle "$TS_TARGET" "$TS_SHELL_NAME" 120 || echo "(still running after 120s, continuing anyway)"
             echo "-> ran: $cmd"
             executed+=("$cmd")
         else
             if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR"; then
+                ts_wait_pane_idle "$TS_TARGET" "$TS_SHELL_NAME" 120 || echo "(still running after 120s, continuing anyway)"
                 echo "-> ran: ${TS_CONFIRMED_COMMAND:-$cmd}"
                 executed+=("${TS_CONFIRMED_COMMAND:-$cmd}")
             else

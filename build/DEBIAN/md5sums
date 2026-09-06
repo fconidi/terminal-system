@@ -1,10 +1,10 @@
 a5a69dba6d52aeeb45cc34c80383c321  ./etc/xdg/menus/applications-merged/terminal-system.menu
-1b96aaca40a1154b20573dc9ebc8fa91  ./usr/bin/terminal-system
-8a2d80a5b633e39fb0e925eb31232ce8  ./usr/bin/ts-brain
-4ab81c2758887bd843103c6459d7864d  ./usr/lib/terminal-system/lib.sh
-3eae3bb4aa982ccb32f93686411198be  ./usr/share/applications/terminal-system.desktop
-6da722dab7f9cd102cb9862cb9c5d1e6  ./usr/share/doc/terminal-system/README
+25265827a2938deba0d187db7b117317  ./usr/bin/terminal-system
+0cb5007a8f709391f91b1d8942df8a98  ./usr/bin/ts-brain
+4fec2065321381a9a73769f87726ba6a  ./usr/lib/terminal-system/lib.sh
+2d722a3c2a87b524e70664d4b1d33592  ./usr/share/applications/terminal-system.desktop
+6f8b2cdff02d436ba46422364ba84d82  ./usr/share/doc/terminal-system/README
 77dbe2560724ffad26ff1b1376645803  ./usr/share/icons/hicolor/128x128/apps/terminal-system.png
 4466cc7138cd91c746d6f4e0afd5ab95  ./usr/share/icons/hicolor/256x256/apps/terminal-system.png
 4d4d3a124079f03d795e080c88588030  ./usr/share/icons/hicolor/48x48/apps/terminal-system.png
-5f3b5ce059f65b35d0f95b9f2bb5048d  ./usr/share/man/man1/terminal-system.1.gz
+ea6b7c483852386cb471e26b0ff7f179  ./usr/share/man/man1/terminal-system.1.gz

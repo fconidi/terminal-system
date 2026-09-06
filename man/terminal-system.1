@@ -1,17 +1,17 @@
 .TH TERMINAL-SYSTEM 1 "2026-09-06" "terminal-system 1.1.0" "User Commands"
 .SH NAME
-terminal-system \- AI-assisted two-pane terminal
+terminal-system \- AI-assisted two-panel terminal
 .SH SYNOPSIS
 .B terminal-system
 [\fIclaude\fR|\fIcodex\fR]
 .SH DESCRIPTION
-Opens a tmux session with two panes. The left pane is a normal shell
-where commands run. The right pane accepts instructions in natural
+Opens a tmux session with two panels. The left panel is a normal shell
+where commands run. The right panel accepts instructions in natural
 language; the chosen AI engine (Claude Code or Codex, called
 non-interactively with no tool access of its own) translates each
 instruction into one or more shell commands, which are typed into the
-left pane in real time.
-.SH RIGHT-PANE COMMANDS
+left panel in real time.
+.SH RIGHT-PANEL COMMANDS
 .TP
 .B :cmd <command>
 Type a shell command manually, without calling the AI engine.
@@ -36,11 +36,11 @@ dd onto a device, fork bombs, chmod -R 777 /, shutdown/reboot, killall
 block devices under /dev) always forces manual confirmation regardless
 of auto-mode.
 When a command is likely to ask for input, such as sudo, ssh, passwd,
-an editor, or a pager, focus moves to the left pane so passwords and
+an editor, or a pager, focus moves to the left panel so passwords and
 other interactive prompts are entered into the shell running the
-command. When the command finishes and the left pane returns to the
-shell, focus moves back to the instruction pane. Non-interactive
-commands keep focus on the instruction pane.
+command. When the command finishes and the left panel returns to the
+shell, focus moves back to the instruction panel. Non-interactive
+commands keep focus on the instruction panel.
 .SH FILES
 No configuration files. Session context is kept in process memory for
 the current tmux session and is not persisted by terminal-system.

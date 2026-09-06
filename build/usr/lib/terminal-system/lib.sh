@@ -264,6 +264,20 @@ ts_pane_alive() {
     esac
 }
 
+ts_pane_shell_name() {
+    tmux display-message -p -t "$1" '#{pane_current_command}' 2> /dev/null
+}
+
+ts_wait_pane_idle() {
+    local target="$1" shell_name="$2" timeout="${3:-30}" i
+    for ((i = 0; i < timeout * 10; i++)); do
+        ts_pane_alive "$target" || return 1
+        [ "$(ts_pane_shell_name "$target")" = "$shell_name" ] && return 0
+        sleep 0.1
+    done
+    return 1
+}
+
 ts_confirm_and_send() {
     local target="$1" cmd="$2" return_target="${3:-}" reply edited
     while true; do
