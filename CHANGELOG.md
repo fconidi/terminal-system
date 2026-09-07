@@ -3,6 +3,29 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.1.3] - 2026-09-07
+
+### Changed
+- Pane typing now sends 6-character chunks per `tmux send-keys` call
+  instead of one call per character -- ~6x fewer subprocess spawns.
+  Measured: 0.664s -> 0.377s to type a 67-character command (avg of 5
+  runs).
+- AI engine model is now overridable via `TS_CLAUDE_MODEL` /
+  `TS_CODEX_MODEL` env vars (unset by default, same behavior as
+  before). Tried defaulting Claude to `haiku` on the assumption that a
+  lighter model would be faster for the simple instruction-to-command
+  translation task; measured it was actually slower (15.18s avg vs
+  10.86s avg for the CLI's own default, 5+5 interleaved runs), so left
+  the default unset.
+
+### Fixed
+- `tmux send-keys -l` silently drops an unescaped `;` when it is the
+  last character of the argument (verified on live tmux; a `;`
+  embedded elsewhere in the argument is always safe). The old
+  one-character-per-call typing loop dodged this by accident; batching
+  into multi-character chunks exposed it. Now only a chunk-trailing
+  `;` gets the `\;` escape.
+
 ## [1.1.1] - 2026-09-07
 
 ### Fixed
