@@ -102,18 +102,27 @@ ts_is_dangerous_command() {
 
 TS_SYSTEM_PROMPT="You translate natural-language instructions into shell commands for Debian/Ubuntu Linux. Reply ONLY with the required shell commands, one per line, with no explanations, no markdown, and no backticks. If more than one command is needed, list them in order, one per line."
 
+# No forced default model: measured (2026-09-07, 5+5 interleaved runs) haiku
+# averaging 15.18s vs 10.86s for the CLI's own default on this setup -- the
+# assumption that a lighter model would be faster did not hold here. Left
+# overridable via env var for anyone who wants to test their own setup.
+TS_CLAUDE_MODEL="${TS_CLAUDE_MODEL:-}"
+TS_CODEX_MODEL="${TS_CODEX_MODEL:-}"
+
 ts_call_engine() {
-    local engine="$1" prompt="$2" bin out rc tmpfile
+    local engine="$1" prompt="$2" bin out rc tmpfile model_args=()
     bin="$(ts_resolve_bin "$engine")" || return 1
 
     case "$engine" in
         claude)
-            out="$("$bin" -p --disallowedTools "*" --system-prompt "$TS_SYSTEM_PROMPT" -- "$prompt" 2> /dev/null)"
+            [ -n "$TS_CLAUDE_MODEL" ] && model_args=(--model "$TS_CLAUDE_MODEL")
+            out="$("$bin" -p --disallowedTools "*" "${model_args[@]}" --system-prompt "$TS_SYSTEM_PROMPT" -- "$prompt" 2> /dev/null)"
             rc=$?
             ;;
         codex)
+            [ -n "$TS_CODEX_MODEL" ] && model_args=(--model "$TS_CODEX_MODEL")
             tmpfile="$(mktemp)"
-            "$bin" exec -s read-only --skip-git-repo-check --output-last-message "$tmpfile" -- "$TS_SYSTEM_PROMPT
+            "$bin" exec -s read-only --skip-git-repo-check "${model_args[@]}" --output-last-message "$tmpfile" -- "$TS_SYSTEM_PROMPT
 $prompt" > /dev/null 2>&1
             rc=$?
             out="$(cat "$tmpfile" 2> /dev/null)"
@@ -191,11 +200,15 @@ ts_build_prompt() {
 }
 
 ts_type_into_pane() {
-    local target="$1" cmd="$2" delay="${3:-0.004}" i char
-    for ((i = 0; i < ${#cmd}; i++)); do
-        char="${cmd:$i:1}"
-        [ "$char" = ';' ] && char='\;'
-        tmux send-keys -t "$target" -l -- "$char"
+    # tmux's own CLI parser treats a trailing, unescaped ";" at the end of a
+    # send-keys -l argument as a command separator and swallows it (verified:
+    # embedded ";" mid-argument is always safe; only a ";" that is the last
+    # character of the argument needs the \; escape).
+    local target="$1" cmd="$2" delay="${3:-0.02}" chunk_size="${4:-6}" i chunk
+    for ((i = 0; i < ${#cmd}; i += chunk_size)); do
+        chunk="${cmd:$i:$chunk_size}"
+        [[ "$chunk" == *\; ]] && chunk="${chunk%;}\\;"
+        tmux send-keys -t "$target" -l -- "$chunk"
         sleep "$delay"
     done
 }
