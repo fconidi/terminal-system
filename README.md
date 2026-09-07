@@ -19,24 +19,37 @@ typed into the left panel in real time for you to review and confirm.
   context; the reply is parsed into one or more shell commands.
 - Each command is typed into the left panel and, by default, waits for
   manual confirmation (Enter to run, `e` to edit, `n` to cancel).
-- An opt-in auto-mode (`:auto on`) executes safe commands automatically.
-  A fixed set of dangerous patterns — destructive `rm`, `mkfs`, `dd`
-  onto a device, fork bombs, `chmod -R 777 /`, `shutdown`/`reboot`,
-  `killall -9`, `userdel`/`groupdel` on root/sudo/admin accounts,
-  `iptables -F`, writes onto common block devices under `/dev` — always
-  forces manual confirmation regardless of auto-mode.
+- An opt-in auto-mode (`:auto readonly`) executes a command without
+  asking only if it passes two checks: its first word is a known
+  read-only program (`ls`, `cat`, `grep`, `ps`, `git status/log/diff`,
+  `systemctl status`, `journalctl`, `dpkg -l`, `apt list/search/show`,
+  and similar), and it contains none of the shell metacharacters that
+  could turn a read-only command into something else (redirects,
+  pipes, backticks, `$()`, `;`, `&`). A fixed set of always-dangerous
+  patterns — destructive `rm`, `mkfs`, `dd` onto a device, fork bombs,
+  any recursive `chmod` on `/`, `shutdown`/`reboot`, `killall -9`,
+  `userdel`/`groupdel` on root/sudo/admin accounts, `iptables -F`,
+  writes onto common block devices under `/dev` — is checked as a
+  second layer. Anything not explicitly recognized as safe always
+  stops for confirmation, even in auto-mode.
 - When a command is likely to need input (`sudo`, `ssh`, `passwd`, an
   editor, a pager), focus moves to the left panel so prompts are answered
   in the shell that's actually running the command, then moves back.
-- Session instructions and command history are kept in memory for the
-  current tmux session only — nothing is written to disk.
+- Session instructions and command history are kept in memory only if
+  `:context on` is used (off by default); recent left-panel output is
+  scanned for common secret patterns before being stored, on a
+  best-effort basis. Nothing is written to disk either way.
+- terminal-system runs on its own dedicated tmux server (`tmux -L`),
+  separate from any other tmux session you have open, so its
+  mouse/copy-paste key bindings don't leak into your other sessions.
 - The AI model used for translation can be overridden with
   `TS_CLAUDE_MODEL` / `TS_CODEX_MODEL` (unset by default, which uses
   each CLI's own default model).
 
 Right-panel commands: `:cmd <command>` (run manually, skip the AI),
-`:manual` (prompt for a manual command), `:auto on|off`, `:engine
-claude|codex`, `:quit`. Full details in `man/terminal-system.1`.
+`:manual` (prompt for a manual command), `:auto readonly|off`,
+`:context on|off|show|clear`, `:engine claude|codex`, `:quit`. Full
+details in `man/terminal-system.1`.
 
 ## Requirements
 
