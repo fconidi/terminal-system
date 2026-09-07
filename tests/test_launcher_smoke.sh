@@ -76,6 +76,15 @@ right_pid="$(tmux -S "$SOCK" display-message -p -t "$session_name:0.1" '#{pane_p
 right_args="$(ps -o args= -p "$right_pid" 2>/dev/null || true)"
 check "launcher passes a stable pane id to ts-brain" "$right_args" "%"
 
+# Mouse mode is on for both panes (see below), which routes mouse-drag
+# selection through tmux copy-mode instead of the terminal's own selection.
+# Without a copy-pipe target, that selection only ever lands in tmux's
+# internal buffer -- never the system clipboard -- on either pane.
+copy_keys="$(tmux -S "$SOCK" list-keys -T copy-mode 2>/dev/null)"
+check "mouse-drag copy pipes selection to xclip (emacs table)" "$copy_keys" 'MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "xclip -in -selection clipboard"'
+copy_keys_vi="$(tmux -S "$SOCK" list-keys -T copy-mode-vi 2>/dev/null)"
+check "mouse-drag copy pipes selection to xclip (vi table)" "$copy_keys_vi" 'MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "xclip -in -selection clipboard"'
+
 tmux -S "$SOCK" send-keys -t "$session_name:0.1" ":quit" C-m
 sleep 0.3
 
