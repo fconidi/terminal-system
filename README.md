@@ -30,6 +30,9 @@ typed into the left panel in real time for you to review and confirm.
   in the shell that's actually running the command, then moves back.
 - Session instructions and command history are kept in memory for the
   current tmux session only — nothing is written to disk.
+- The AI model used for translation can be overridden with
+  `TS_CLAUDE_MODEL` / `TS_CODEX_MODEL` (unset by default, which uses
+  each CLI's own default model).
 
 Right-panel commands: `:cmd <command>` (run manually, skip the AI),
 `:manual` (prompt for a manual command), `:auto on|off`, `:engine
