@@ -3,6 +3,45 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.1.5] - 2026-09-07
+
+### Security
+- Auto-mode's dangerous-command denylist was trivially bypassable
+  (`/bin/rm -rf /`, `bash -c 'rm -rf /'`, `echo safe; /bin/rm -rf /`,
+  `find / -delete`, `wipefs -a /dev/sda`, `echo broken > /etc/passwd`,
+  `chmod -R 000 /`, `curl URL | sh` all skipped confirmation). Replaced
+  with an allowlist: auto-mode now only skips confirmation for a fixed
+  set of read-only programs (`ls`, `cat`, `grep`, `ps`, `git
+  status/log/diff`, `systemctl status`, `journalctl`, `dpkg -l`, `apt
+  list/search/show`, and similar) that also contain none of the shell
+  metacharacters that could smuggle something else in (redirects,
+  pipes, backticks, `$()`, `;`, `&`). `:auto on` is now an alias for
+  the new `:auto readonly`.
+- Left-panel output was always kept as AI context and sent, unredacted,
+  in follow-up prompts. Now off by default; `:context
+  on|off|show|clear` opts in, and stored output is scanned for common
+  secret patterns (passwords, tokens, API keys, Bearer headers,
+  AWS/GitHub/Slack/OpenAI-style key prefixes) first, on a best-effort
+  basis.
+- terminal-system now runs on its own dedicated tmux server (`tmux
+  -L`) instead of the user's default one, so its copy-mode mouse-drag
+  key bindings can no longer leak into the user's other tmux sessions.
+
+### Changed
+- `ts_wait_pane_idle` now requires two consecutive idle samples 100ms
+  apart instead of one -- cheap insurance against a theoretical race
+  in the pane-idle-detection polling that 5/5 empirical trials against
+  a real tmux server didn't reproduce.
+- `chmod -R <mode> /` is flagged as dangerous for any mode, not just
+  the exact value 777.
+- `xclip` moved from `Depends` to `Recommends`, matching the code
+  (already optional via `command -v xclip`).
+
+### Fixed
+- Man page said "terminal-system 1.1.0" and was missing a date update;
+  `TS_CLAUDE_MODEL`/`TS_CODEX_MODEL` are now documented.
+- `Comment[it]` in the desktop file was still in English.
+
 ## [1.1.3] - 2026-09-07
 
 ### Changed
