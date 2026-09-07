@@ -14,7 +14,8 @@ Opens a tmux session with two panels:
 Right-panel commands:
   :cmd <command>          type a shell command manually, without AI
   :manual                 prompt for a manual shell command
-  :auto on|off            toggle automatic execution (default: off)
+  :auto readonly|off      toggle automatic execution (default: off)
+  :context on|off|show|clear   opt-in AI context from left-panel output
   :engine claude|codex    switch AI engine for the rest of the session
   :quit                   end the session
 
@@ -27,12 +28,19 @@ Engine selection:
 
 Confirmation:
   By default every generated or manual command waits for you to press
-  Enter (or type "e" to edit it, or "n" to cancel it) before it runs. With
-  ":auto on", safe commands run automatically — but a fixed set of
-  dangerous patterns (rm -rf /, mkfs, dd onto /dev, fork bombs,
-  chmod -R 777 /, shutdown/reboot, killall -9, userdel/groupdel on
-  root/sudo/admin, iptables -F, writes onto common block devices under
-  /dev) always stops for manual confirmation regardless of auto-mode.
+  Enter (or type "e" to edit it, or "n" to cancel it) before it runs.
+  With ":auto readonly", a command runs without confirmation only if
+  its first word is a known read-only program (ls, cat, grep, ps, df,
+  du, git status/log/diff, systemctl status, journalctl, dpkg -l, apt
+  list/search/show, and similar) AND it contains none of the shell
+  metacharacters that could turn a read-only command into something
+  else (redirects, pipes, backticks, $(), ;, &). A fixed set of
+  always-dangerous patterns (rm -rf /, mkfs, dd onto /dev, fork bombs,
+  any recursive chmod on /, shutdown/reboot, killall -9,
+  userdel/groupdel on root/sudo/admin, iptables -F, writes onto common
+  block devices under /dev) is checked as a second layer. Anything not
+  explicitly recognized as safe always stops for confirmation, even in
+  auto-mode.
   When a command is likely to ask for input, such as sudo, ssh, passwd,
   an editor, or a pager, focus moves to the left panel so passwords and
   other interactive prompts are typed into the shell running the
@@ -42,10 +50,19 @@ Confirmation:
   instruction panel so you can keep asking questions.
 
 Session memory:
-  Instructions, generated commands, and recent left-panel output are
-  kept as context for the rest of the session (so "now add him to the
-  sudo group" can refer back to a user you just created), but nothing
-  is written to disk — history disappears when the session ends.
+  Off by default. With ":context on", instructions, generated commands,
+  and recent left-panel output are kept as context for the rest of the
+  session (so "now add him to the sudo group" can refer back to a user
+  you just created); output is scanned for common secret patterns
+  (passwords, tokens, API keys, and similar) before being stored, on a
+  best-effort basis. Nothing is written to disk either way — history
+  disappears when the session ends, and ":context clear" empties it
+  sooner. ":context show" prints what's currently stored.
+
+Isolation:
+  terminal-system runs on its own dedicated tmux server (a named socket
+  via tmux -L), separate from any other tmux session you have open, so
+  its mouse/copy-paste key bindings don't leak into your other sessions.
 
 Requires:
   The claude and/or codex CLI already installed and authenticated.

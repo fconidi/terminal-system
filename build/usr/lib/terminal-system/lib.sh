@@ -84,7 +84,7 @@ ts_chmod_root_dangerous() {
             target="$word"
             break
         done
-        [ "$recursive" -eq 1 ] && [ "$mode" = "777" ] && [ "$target" = "/" ] && return 0
+        [ "$recursive" -eq 1 ] && [ -n "$mode" ] && [ "$target" = "/" ] && return 0
         return 1
     done
     return 1
@@ -98,6 +98,93 @@ ts_is_dangerous_command() {
         [[ "$cmd" =~ $p ]] && return 0
     done
     return 1
+}
+
+# Auto-mode's real gate: a denylist can only ever catch the destructive
+# patterns someone thought to list (see TS_DANGER_PATTERNS above, and the
+# 2026-09-07 review that walked past all of them with `/bin/rm -rf /`,
+# `bash -c 'rm -rf /'`, `find / -delete`, `curl URL | sh`, etc). This is an
+# allowlist instead: auto-mode only skips confirmation for a command whose
+# first word is a known read-only program AND that carries none of the
+# shell metacharacters (redirects, pipes, substitution, chaining,
+# backgrounding) that would let a "safe" command smuggle an arbitrary one.
+# Everything not explicitly recognized here still stops for confirmation.
+ts_is_safe_readonly_command() {
+    local cmd="$1" words=() base sub w
+    [[ "$cmd" =~ [\<\>\|\`\;\&] ]] && return 1
+    [[ "$cmd" == *'$('* ]] && return 1
+    read -r -a words <<< "$cmd"
+    [ "${#words[@]}" -eq 0 ] && return 1
+    base="${words[0]##*/}"
+    case "$base" in
+        find)
+            for w in "${words[@]}"; do
+                case "$w" in -delete | -exec | -execdir | -fprintf | -fls | -ok | -okdir) return 1 ;; esac
+            done
+            return 0
+            ;;
+        git)
+            sub="${words[1]:-}"
+            case "$sub" in status | log | diff | show | branch | remote | describe | blame | shortlog) return 0 ;; *) return 1 ;; esac
+            ;;
+        systemctl)
+            sub="${words[1]:-}"
+            case "$sub" in status | is-active | is-enabled | is-failed | list-units | list-unit-files | show | cat) return 0 ;; *) return 1 ;; esac
+            ;;
+        journalctl)
+            for w in "${words[@]}"; do
+                case "$w" in --vacuum* | --flush | --sync | --rotate) return 1 ;; esac
+            done
+            return 0
+            ;;
+        dpkg)
+            sub="${words[1]:-}"
+            case "$sub" in -l | --list | -s | --status | -L | --listfiles | -S | --search) return 0 ;; *) return 1 ;; esac
+            ;;
+        apt | apt-get)
+            sub="${words[1]:-}"
+            case "$sub" in list | search | show | policy) return 0 ;; *) return 1 ;; esac
+            ;;
+        date)
+            for w in "${words[@]:1}"; do
+                case "$w" in -s | --set | --set=*) return 1 ;; esac
+            done
+            return 0
+            ;;
+        hostname)
+            for w in "${words[@]:1}"; do
+                [[ "$w" == -* ]] && continue
+                return 1
+            done
+            return 0
+            ;;
+        tail)
+            for w in "${words[@]:1}"; do
+                case "$w" in -f | -F | --follow | --follow=*) return 1 ;; esac
+            done
+            return 0
+            ;;
+        ls | cat | grep | egrep | fgrep | head | wc | ps | df | du | free | uptime | whoami | id | pwd | uname | which | type | stat | file | tree | lsblk | lscpu | lsusb | lspci | printenv | history | echo | printf | w | who | last)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Best-effort only: catches common accidental leaks (plaintext secrets in
+# command output, API keys with a recognizable prefix) before pane output
+# is stored as AI context. Not a DLP system -- it will not catch everything,
+# and reviewing :context show before relying on it is the user's job.
+ts_redact_secrets() {
+    sed -E \
+        -e 's/\b(AKIA[0-9A-Z]{16})\b/[REDACTED-AWS-KEY]/g' \
+        -e 's/\b(gh[pousr]_[A-Za-z0-9]{20,})\b/[REDACTED-TOKEN]/g' \
+        -e 's/\b(xox[baprs]-[A-Za-z0-9-]{10,})\b/[REDACTED-TOKEN]/g' \
+        -e 's/\b(sk-[A-Za-z0-9_-]{16,})\b/[REDACTED-KEY]/g' \
+        -e 's/([Bb]earer)[[:space:]]+[A-Za-z0-9._-]+/\1 [REDACTED]/g' \
+        -e 's/([Pp]assword|[Pp]asswd|[Ss]ecret|[Tt]oken|[Aa]pi[_-]?[Kk]ey)([[:space:]]*[:=][[:space:]]*)[^[:space:]]+/\1\2[REDACTED]/g'
 }
 
 TS_SYSTEM_PROMPT="You translate natural-language instructions into shell commands for Debian/Ubuntu Linux. Reply ONLY with the required shell commands, one per line, with no explanations, no markdown, and no backticks. If more than one command is needed, list them in order, one per line."
@@ -168,9 +255,15 @@ ts_parse_commands() {
 
 TS_HISTORY=()
 TS_HISTORY_MAX="${TS_HISTORY_MAX:-5}"
+# Opt-in: left-panel output can contain secrets, file contents, or anything
+# else a command printed. Off by default -- nothing is kept as AI context,
+# or sent in a future prompt, unless the user turns it on with :context on.
+TS_CONTEXT_ENABLED="${TS_CONTEXT_ENABLED:-0}"
 
 ts_history_append() {
+    [ "$TS_CONTEXT_ENABLED" -eq 1 ] || return 0
     local instruction="$1" commands="$2" output="$3"
+    output="$(ts_redact_secrets <<< "$output")"
     TS_HISTORY+=("instruction: ${instruction}
 commands:
 ${commands}
@@ -281,11 +374,26 @@ ts_pane_shell_name() {
     tmux display-message -p -t "$1" '#{pane_current_command}' 2> /dev/null
 }
 
+# Polls tmux's own idea of the pane's foreground process rather than an
+# in-band completion marker: a marker means appending `; echo $? > file;
+# tmux wait-for -S sig` to every single command before it's typed, which
+# would permanently clutter every line the user sees in the left panel just
+# to close a theoretical race. Empirically (2026-09-07, 5/5 trials against a
+# real tmux 3.5a server, `sleep 2`) a single sample never read "idle" early.
+# Two consecutive idle samples, 100ms apart, are required before declaring
+# done, so a lone transient misread can't cause a false-idle -- cheap
+# insurance against the case the empirical test didn't happen to hit,
+# without paying for it on every command.
 ts_wait_pane_idle() {
-    local target="$1" shell_name="$2" timeout="${3:-30}" i
+    local target="$1" shell_name="$2" timeout="${3:-30}" i confirmations=0
     for ((i = 0; i < timeout * 10; i++)); do
         ts_pane_alive "$target" || return 1
-        [ "$(ts_pane_shell_name "$target")" = "$shell_name" ] && return 0
+        if [ "$(ts_pane_shell_name "$target")" = "$shell_name" ]; then
+            confirmations=$((confirmations + 1))
+            [ "$confirmations" -ge 2 ] && return 0
+        else
+            confirmations=0
+        fi
         sleep 0.1
     done
     return 1

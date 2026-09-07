@@ -17,7 +17,7 @@ fi
 die() { echo "terminal-system: $*" >&2; exit 1; }
 
 cmd_start() {
-    local requested="${1:-}" engine session left_pane right_pane
+    local requested="${1:-}" engine session left_pane right_pane sock_args=()
     [ -n "${TMUX:-}" ] && die "already inside a tmux session -- detach or exit first (Ctrl+b d)."
     command -v tmux > /dev/null 2>&1 || die "tmux is not installed."
 
@@ -27,10 +27,21 @@ cmd_start() {
         engine="$(ts_pick_engine claude)" 2> /dev/null || engine="$(ts_pick_engine codex)" 2> /dev/null || die "no AI engine found (claude, codex)."
     fi
 
+    # A dedicated tmux server (via -L, a named socket in tmux's own socket
+    # directory) instead of the user's default one: bind-key changes below
+    # apply to whole key tables, not to a single session, so on the default
+    # server they'd silently alter mouse-copy behavior in every other tmux
+    # session the user has open. Tests override this via TS_TMUX_SOCK_ARGS.
+    if [ -n "${TS_TMUX_SOCK_ARGS:-}" ]; then
+        read -r -a sock_args <<< "$TS_TMUX_SOCK_ARGS"
+    else
+        sock_args=(-L "terminal-system-$$")
+    fi
+
     session="terminal-system-$$"
-    left_pane="$(tmux new-session -d -s "$session" -n main -P -F '#{pane_id}')" || die "could not create the tmux session."
-    tmux set-option -t "$session" mouse on
-    tmux set-option -t "$session" history-limit 10000
+    left_pane="$(tmux "${sock_args[@]}" new-session -d -s "$session" -n main -P -F '#{pane_id}')" || die "could not create the tmux session."
+    tmux "${sock_args[@]}" set-option -t "$session" mouse on
+    tmux "${sock_args[@]}" set-option -t "$session" history-limit 10000
     # Mouse mode routes mouse-drag selection through tmux copy-mode instead
     # of the terminal's native selection, in both panes. tmux's default
     # copy-pipe-and-cancel binding has no pipe target, so it only lands in
@@ -38,12 +49,12 @@ cmd_start() {
     # which don't implement the OSC 52 fallback, that selection never
     # reaches the system clipboard. Pipe it to xclip explicitly.
     if command -v xclip > /dev/null 2>&1; then
-        tmux bind-key -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "xclip -in -selection clipboard"
-        tmux bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "xclip -in -selection clipboard"
+        tmux "${sock_args[@]}" bind-key -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "xclip -in -selection clipboard"
+        tmux "${sock_args[@]}" bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "xclip -in -selection clipboard"
     fi
-    right_pane="$(tmux split-window -h -t "$left_pane" -P -F '#{pane_id}')" || die "could not create the tmux pane."
-    tmux send-keys -t "$right_pane" "exec ts-brain '$session' '$left_pane' '$engine'" C-m
-    exec tmux attach -t "$session"
+    right_pane="$(tmux "${sock_args[@]}" split-window -h -t "$left_pane" -P -F '#{pane_id}')" || die "could not create the tmux pane."
+    tmux "${sock_args[@]}" send-keys -t "$right_pane" "exec ts-brain '$session' '$left_pane' '$engine'" C-m
+    exec tmux "${sock_args[@]}" attach -t "$session"
 }
 
 cmd_help() {
@@ -58,12 +69,16 @@ Usage: terminal-system [claude|codex]
   Right-panel commands:
     :cmd <command>          type a shell command manually, without AI
     :manual                 prompt for a manual shell command
-    :auto on|off            toggle automatic execution
+    :auto readonly|off      toggle automatic execution (read-only allowlist)
+    :context on|off|show|clear   opt-in AI context from left-panel output
     :engine claude|codex    switch AI engine during the session
     :quit                   close the session
 
-  Commands recognized as dangerous (rm -rf /, mkfs, dd to /dev, etc.)
-  always require manual confirmation, even in auto-mode.
+  Auto-mode only skips confirmation for a fixed allowlist of read-only
+  commands (ls, cat, grep, ps, git log/status/diff, systemctl status,
+  and similar -- no redirects, pipes, substitution, or chaining). Anything
+  else, plus a fixed set of always-dangerous patterns (rm -rf /, mkfs, dd
+  to /dev, etc.), always requires manual confirmation.
 EOF
 }
 
