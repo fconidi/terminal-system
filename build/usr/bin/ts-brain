@@ -1,7 +1,7 @@
 #!/bin/bash
 # terminal-system/build/usr/bin/ts-brain
 # Instruction REPL for terminal-system. Runs as the foreground process of
-# the right-hand pane. Never called directly by a user — terminal-system
+# the right-hand panel. Never called directly by a user — terminal-system
 # launches it with: ts-brain <tmux-session> <left-pane-target> <engine>
 set -uo pipefail
 
