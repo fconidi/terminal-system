@@ -1,9 +1,10 @@
 Package: terminal-system
-Version: 1.1.3
+Version: 1.1.5
 Section: utils
 Priority: optional
 Architecture: all
-Depends: bash, tmux, xclip
+Depends: bash, tmux
+Recommends: xclip
 Maintainer: Franco Conidi aka edmond <fconidi@gmail.com>
 Homepage: https://www.syslinuxos.com
 Description: AI-assisted two-panel terminal (natural language -> shell commands)
@@ -14,14 +15,17 @@ Description: AI-assisted two-panel terminal (natural language -> shell commands)
  real time.
  .
  Every command is confirmed manually by default; an opt-in auto-mode
- (":auto on") executes safe commands automatically, but a fixed set of
- dangerous patterns (rm -rf /, mkfs, dd onto /dev, fork bombs, and
- similar) always forces manual confirmation regardless of auto-mode.
+ (":auto readonly") executes only commands that pass a fixed allowlist of
+ read-only programs with no shell metacharacters, plus a denylist of
+ always-dangerous patterns (rm -rf /, mkfs, dd onto /dev, fork bombs, and
+ similar) as a second layer -- anything else always stops for
+ confirmation.
  .
- Session instructions and commands are kept as context for follow-up
- instructions within the same session, and are never written to disk.
+ Session instructions and left-panel output are kept as AI context only
+ if explicitly enabled (":context on"; off by default), are scanned for
+ common secret patterns first, and are never written to disk.
  .
  Requires the "claude" and/or "codex" CLI to already be installed and
  authenticated; neither is a hard package dependency since neither ships
  as a .deb on this system.
-Installed-Size: 128
+Installed-Size: 136
