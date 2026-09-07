@@ -1,0 +1,6 @@
+#!/bin/bash
+# Stub for tests: `command -v xclip` must succeed for terminal-system's
+# clipboard-binding setup to run; the stub never needs to actually move data
+# in the test environment (no X display), so it just reads and discards.
+cat > /dev/null
+exit 0

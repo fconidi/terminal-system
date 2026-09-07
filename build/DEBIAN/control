@@ -3,7 +3,7 @@ Version: 1.1.0
 Section: utils
 Priority: optional
 Architecture: all
-Depends: bash, tmux
+Depends: bash, tmux, xclip
 Maintainer: Franco Conidi aka edmond <fconidi@gmail.com>
 Homepage: https://www.syslinuxos.com
 Description: AI-assisted two-pane terminal (natural language -> shell commands)

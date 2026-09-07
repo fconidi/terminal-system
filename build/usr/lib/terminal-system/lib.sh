@@ -113,7 +113,7 @@ ts_call_engine() {
             ;;
         codex)
             tmpfile="$(mktemp)"
-            "$bin" exec -s read-only --output-last-message "$tmpfile" -- "$TS_SYSTEM_PROMPT
+            "$bin" exec -s read-only --skip-git-repo-check --output-last-message "$tmpfile" -- "$TS_SYSTEM_PROMPT
 $prompt" > /dev/null 2>&1
             rc=$?
             out="$(cat "$tmpfile" 2> /dev/null)"

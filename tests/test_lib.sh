@@ -122,6 +122,23 @@ run '
 '
 
 run '
+    # codex exec refuses to run outside a trusted/git directory unless told
+    # otherwise ("Not inside a trusted directory and --skip-git-repo-check
+    # was not specified"), and terminal-system is launched from whatever
+    # cwd the user happens to be in -- it has no reason to require that
+    # directory be a pre-trusted codex project or a git repo.
+    STUBS="'"$HERE"'/stubs"
+    log="$(mktemp)"
+    PATH="$STUBS:$PATH"; . "'"$LIB"'"
+    export TS_STUB_RESPONSE="sudo adduser Pippo"
+    export TS_STUB_ARG_LOG="$log"
+    ts_call_engine codex "create user Pippo" > /dev/null
+    args="$(cat "$log")"
+    rm -f "$log"
+    grep -Fxq -- "--skip-git-repo-check" <<< "$args" && echo "ok - call_engine codex skips the git-repo/trust check" || echo "FAIL - call_engine codex missing --skip-git-repo-check (args: $args)"
+'
+
+run '
     PATH="/nonexistent"; HOME="/nonexistent"; . "'"$LIB"'"
     if ts_call_engine claude "x" > /dev/null 2>&1; then echo "FAIL - call_engine should fail when binary missing"; else echo "ok - call_engine fails cleanly when binary missing"; fi
 '
