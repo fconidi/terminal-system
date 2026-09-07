@@ -1,16 +1,16 @@
 Package: terminal-system
-Version: 1.1.0
+Version: 1.1.1
 Section: utils
 Priority: optional
 Architecture: all
 Depends: bash, tmux, xclip
 Maintainer: Franco Conidi aka edmond <fconidi@gmail.com>
 Homepage: https://www.syslinuxos.com
-Description: AI-assisted two-pane terminal (natural language -> shell commands)
- A tmux two-pane layout: the right pane takes instructions in natural
+Description: AI-assisted two-panel terminal (natural language -> shell commands)
+ A tmux two-panel layout: the right panel takes instructions in natural
  language, an AI engine (Claude Code or Codex, called non-interactively
  and with no tool access of its own) translates each instruction into
- shell command(s), and those commands are typed into the left pane in
+ shell command(s), and those commands are typed into the left panel in
  real time.
  .
  Every command is confirmed manually by default; an opt-in auto-mode

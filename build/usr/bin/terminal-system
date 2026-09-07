@@ -1,7 +1,7 @@
 #!/bin/bash
 # terminal-system/build/usr/bin/terminal-system
-# AI-assisted two-pane terminal: right pane takes natural-language
-# instructions, left pane receives the generated shell commands.
+# AI-assisted two-panel terminal: right panel takes natural-language
+# instructions, left panel receives the generated shell commands.
 set -uo pipefail
 
 VERSION="1.1.0"
