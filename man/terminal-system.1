@@ -1,4 +1,4 @@
-.TH TERMINAL-SYSTEM 1 "2026-09-06" "terminal-system 1.1.0" "User Commands"
+.TH TERMINAL-SYSTEM 1 "2026-09-07" "terminal-system 1.1.5" "User Commands"
 .SH NAME
 terminal-system \- AI-assisted two-panel terminal
 .SH SYNOPSIS
@@ -11,6 +11,10 @@ language; the chosen AI engine (Claude Code or Codex, called
 non-interactively with no tool access of its own) translates each
 instruction into one or more shell commands, which are typed into the
 left panel in real time.
+.PP
+The session runs on its own dedicated tmux server, separate from the
+user's default one, so the mouse/copy-paste bindings terminal-system
+sets up don't affect any other tmux session the user has open.
 .SH RIGHT-PANEL COMMANDS
 .TP
 .B :cmd <command>
@@ -19,8 +23,17 @@ Type a shell command manually, without calling the AI engine.
 .B :manual
 Prompt for a manual shell command.
 .TP
-.B :auto on|off
-Toggle automatic execution of generated commands. Default: off.
+.B :auto readonly|off
+Toggle automatic execution of generated commands. Default: off. See
+.B SAFETY
+below for exactly what auto-mode will and will not run without asking.
+"on" is accepted as an alias for "readonly".
+.TP
+.B :context on|off|show|clear
+Toggle whether recent left-panel output is kept and sent to the AI
+engine as context for follow-up instructions. Default: off. "show"
+prints what is currently stored; "clear" empties it without changing
+the on/off setting.
 .TP
 .B :engine claude|codex
 Switch the AI engine for the rest of the session.
@@ -30,17 +43,53 @@ End the session.
 .SH SAFETY
 Every generated or manual command waits for manual confirmation by
 default. Press Enter to execute it, "e" to edit it, or "n" to cancel it.
-In auto-mode, a fixed set of dangerous patterns (destructive rm, mkfs,
-dd onto a device, fork bombs, chmod -R 777 /, shutdown/reboot, killall
--9, userdel/groupdel on root/sudo/admin, iptables -F, writes onto common
-block devices under /dev) always forces manual confirmation regardless
-of auto-mode.
+.PP
+In auto-mode, a command runs without confirmation only if it passes
+.B both
+of the following:
+.IP \(bu 2
+Its first word is a known read-only program (ls, cat, grep, ps, df, du,
+git status/log/diff, systemctl status, journalctl, dpkg -l, apt
+list/search/show, and similar), and it contains none of the shell
+metacharacters that could turn a read-only command into something else
+(redirects, pipes, backticks, \fB$()\fR, \fB;\fR, \fB&\fR).
+.IP \(bu 2
+It does not match the fixed set of always-dangerous patterns (destructive
+rm, mkfs, dd onto a device, fork bombs, any recursive chmod on /,
+shutdown/reboot, killall -9, userdel/groupdel on root/sudo/admin,
+iptables -F, writes onto common block devices under /dev) -- checked even
+though the allowlist above should already exclude them, as a second
+layer.
+.PP
+Anything else -- including any command auto-mode doesn't recognize --
+always stops for manual confirmation. This is deliberately conservative:
+new instructions and edge cases default to asking rather than to running.
+Review generated commands before confirming them regardless of mode.
+.PP
 When a command is likely to ask for input, such as sudo, ssh, passwd,
 an editor, or a pager, focus moves to the left panel so passwords and
 other interactive prompts are entered into the shell running the
 command. When the command finishes and the left panel returns to the
 shell, focus moves back to the instruction panel. Non-interactive
 commands keep focus on the instruction panel.
+.PP
+Left-panel output is never sent to the AI engine, and nothing is kept
+between instructions, unless
+.B :context on
+is used. When on, output is scanned for common secret patterns
+(passwords, tokens, API keys, Bearer headers, and similar) before being
+stored, but this is best-effort, not a guarantee -- check
+.B :context show
+before relying on it in a session where sensitive output appeared.
+.SH ENVIRONMENT
+.TP
+.B TS_CLAUDE_MODEL
+Model name passed to \fBclaude\fR's \fB\-\-model\fR flag. Unset by
+default (uses the CLI's own default).
+.TP
+.B TS_CODEX_MODEL
+Model name passed to \fBcodex\fR's \fB\-\-model\fR flag. Unset by
+default (uses the CLI's own default).
 .SH FILES
 No configuration files. Session context is kept in process memory for
 the current tmux session and is not persisted by terminal-system.

@@ -280,4 +280,66 @@ else
     echo "ok - scenario 7: session closes when target pane is gone"
 fi
 
+# --- Scenario 8: a command that is not on the dangerous denylist but is
+# also not on the new safe-readonly allowlist still asks for confirmation
+# in auto-mode. Regression test for the 2026-09-07 review finding: the old
+# denylist-only auto-mode would have run this without asking.
+export TS_STUB_RESPONSE="systemctl restart networking"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+start_session s8
+tmux -S "$SOCK" send-keys -t s8:0.1 ":auto readonly" C-m
+sleep 0.2
+tmux -S "$SOCK" send-keys -t s8:0.1 "restart networking" C-m
+sleep 0.6
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s8:0.1 -S -10)"
+check "scenario 8: non-allowlisted, non-dangerous command still asks in auto-mode" "$right_out" "[CONFIRM] systemctl restart networking"
+tmux -S "$SOCK" send-keys -t s8:0.1 "n" C-m
+sleep 0.2
+tmux -S "$SOCK" send-keys -t s8:0.1 ":quit" C-m
+sleep 0.2
+
+# --- Scenario 9: context is off by default (nothing sent to the AI engine
+# from a prior instruction) and only carried forward after :context on.
+context_log="$(mktemp)"
+export TS_STUB_RESPONSE="echo first-instruction-output"
+export TS_STUB_ARG_LOG="$context_log"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+tmux -S "$SOCK" set-environment -g TS_STUB_ARG_LOG "$context_log" 2>/dev/null
+start_session s9
+tmux -S "$SOCK" send-keys -t s9:0.1 "run the first instruction" C-m
+sleep 0.6
+tmux -S "$SOCK" send-keys -t s9:0.1 C-m
+sleep 0.4
+export TS_STUB_RESPONSE="echo second-instruction-output"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+tmux -S "$SOCK" send-keys -t s9:0.1 "run a second instruction" C-m
+sleep 0.6
+prompt_arg="$(cat "$context_log")"
+not_contains "scenario 9: context off by default -- prior instruction not sent to the AI engine" "$prompt_arg" "run the first instruction"
+tmux -S "$SOCK" send-keys -t s9:0.1 C-m
+sleep 0.4
+tmux -S "$SOCK" send-keys -t s9:0.1 ":context on" C-m
+sleep 0.2
+export TS_STUB_RESPONSE="echo third-instruction-output"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+tmux -S "$SOCK" send-keys -t s9:0.1 "run a third instruction" C-m
+sleep 0.6
+tmux -S "$SOCK" send-keys -t s9:0.1 C-m
+sleep 0.4
+export TS_STUB_RESPONSE="echo fourth-instruction-output"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+tmux -S "$SOCK" send-keys -t s9:0.1 "run a fourth instruction" C-m
+sleep 0.6
+prompt_arg="$(cat "$context_log")"
+check "scenario 9: after :context on, a later prompt carries the prior instruction" "$prompt_arg" "run a third instruction"
+tmux -S "$SOCK" send-keys -t s9:0.1 ":context show" C-m
+sleep 0.2
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s9:0.1 -S -20)"
+check "scenario 9: :context show prints stored context" "$right_out" "run a third instruction"
+tmux -S "$SOCK" send-keys -t s9:0.1 ":quit" C-m
+sleep 0.2
+rm -f "$context_log"
+unset TS_STUB_ARG_LOG
+tmux -S "$SOCK" set-environment -gu TS_STUB_ARG_LOG 2>/dev/null
+
 exit $FAIL

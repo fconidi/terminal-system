@@ -19,13 +19,14 @@ TS_TARGET="${2:?ts-brain: missing target pane}"
 TS_ENGINE="${3:?ts-brain: missing engine}"
 TS_OPERATOR="${TMUX_PANE:-}"
 TS_AUTO=0
+TS_CONTEXT_ENABLED=0
 force_manual=0
 
 TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: no AI engine found (claude, codex)."; exit 1; }
 TS_SHELL_NAME="$(ts_pane_shell_name "$TS_TARGET")"
 
-echo "terminal-system -- engine: $TS_ENGINE (auto: off)"
-echo "Type an instruction, or :cmd <command>, :manual, :auto on|off, :engine claude|codex, :quit"
+echo "terminal-system -- engine: $TS_ENGINE (auto: off, context: off)"
+echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :engine claude|codex, :quit"
 
 ts_other_engine() {
     case "$1" in
@@ -73,8 +74,36 @@ while true; do
             tmux kill-session -t "$TS_SESSION" 2> /dev/null
             exit 0
             ;;
-        ":auto on")  TS_AUTO=1; echo "auto-mode: on"; continue ;;
+        ":auto on"|":auto readonly")
+            TS_AUTO=1
+            echo "auto-mode: on (read-only allowlist -- anything not on it, plus the fixed dangerous-pattern list, still asks)"
+            continue
+            ;;
         ":auto off") TS_AUTO=0; echo "auto-mode: off"; continue ;;
+        ":context on")
+            TS_CONTEXT_ENABLED=1
+            echo "context: on -- recent left-panel output will be kept (redacted best-effort) and sent to the AI engine as context"
+            continue
+            ;;
+        ":context off")
+            TS_CONTEXT_ENABLED=0
+            TS_HISTORY=()
+            echo "context: off"
+            continue
+            ;;
+        ":context show")
+            if [ "${#TS_HISTORY[@]}" -eq 0 ]; then
+                echo "(no context stored)"
+            else
+                ts_history_context
+            fi
+            continue
+            ;;
+        ":context clear")
+            TS_HISTORY=()
+            echo "context: cleared"
+            continue
+            ;;
         :cmd)
             echo "usage: :cmd <shell command>"
             continue
@@ -143,7 +172,7 @@ while true; do
             exit 0
         fi
         ts_type_into_pane "$TS_TARGET" "$cmd"
-        if [ "$TS_AUTO" -eq 1 ] && [ "$force_manual" -eq 0 ] && ! ts_is_dangerous_command "$cmd"; then
+        if [ "$TS_AUTO" -eq 1 ] && [ "$force_manual" -eq 0 ] && ts_is_safe_readonly_command "$cmd" && ! ts_is_dangerous_command "$cmd"; then
             ts_auto_send "$TS_TARGET" 0.3 "$cmd" "$TS_OPERATOR"
             ts_wait_pane_idle "$TS_TARGET" "$TS_SHELL_NAME" 120 || echo "(still running after 120s, continuing anyway)"
             echo "-> ran: $cmd"
