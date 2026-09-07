@@ -1,10 +1,10 @@
 # terminal-system
 
-AI-assisted two-pane terminal for tmux. The left pane is a normal shell;
-the right pane takes instructions in natural language, and an AI engine
+AI-assisted two-panel terminal for tmux. The left panel is a normal shell;
+the right panel takes instructions in natural language, and an AI engine
 (Claude Code or Codex, called non-interactively with no tool access of
 its own) translates each instruction into shell command(s), which are
-typed into the left pane in real time for you to review and confirm.
+typed into the left panel in real time for you to review and confirm.
 
 ```
 > list files larger than 100MB in this directory
@@ -13,11 +13,11 @@ typed into the left pane in real time for you to review and confirm.
 
 ## How it works
 
-- `terminal-system [claude|codex]` opens a tmux session with two panes.
-- The right pane runs `ts-brain`, an instruction REPL. Each line you
+- `terminal-system [claude|codex]` opens a tmux session with two panels.
+- The right panel runs `ts-brain`, an instruction REPL. Each line you
   type is sent to the AI engine along with recent session history for
   context; the reply is parsed into one or more shell commands.
-- Each command is typed into the left pane and, by default, waits for
+- Each command is typed into the left panel and, by default, waits for
   manual confirmation (Enter to run, `e` to edit, `n` to cancel).
 - An opt-in auto-mode (`:auto on`) executes safe commands automatically.
   A fixed set of dangerous patterns — destructive `rm`, `mkfs`, `dd`
@@ -26,12 +26,12 @@ typed into the left pane in real time for you to review and confirm.
   `iptables -F`, writes onto common block devices under `/dev` — always
   forces manual confirmation regardless of auto-mode.
 - When a command is likely to need input (`sudo`, `ssh`, `passwd`, an
-  editor, a pager), focus moves to the left pane so prompts are answered
+  editor, a pager), focus moves to the left panel so prompts are answered
   in the shell that's actually running the command, then moves back.
 - Session instructions and command history are kept in memory for the
   current tmux session only — nothing is written to disk.
 
-Right-pane commands: `:cmd <command>` (run manually, skip the AI),
+Right-panel commands: `:cmd <command>` (run manually, skip the AI),
 `:manual` (prompt for a manual command), `:auto on|off`, `:engine
 claude|codex`, `:quit`. Full details in `man/terminal-system.1`.
 
