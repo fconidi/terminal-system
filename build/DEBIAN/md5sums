@@ -1,6 +1,6 @@
 a5a69dba6d52aeeb45cc34c80383c321  ./etc/xdg/menus/applications-merged/terminal-system.menu
 582ef0494414abc3634cc2268baf0d65  ./usr/bin/terminal-system
-c61c7b0ba44ce4faaf81933741e38571  ./usr/bin/ts-brain
+1c4e184f356789ce011dfee8f73c70f2  ./usr/bin/ts-brain
 700562c5be9504ad3a619a61f7198abc  ./usr/lib/terminal-system/lib.sh
 1f3fd25ff5c0706fac6ee243e3d0f0ea  ./usr/share/applications/terminal-system.desktop
 a4ec97cf928a9ee95cc5f6636a995d60  ./usr/share/doc/terminal-system/README

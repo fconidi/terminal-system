@@ -174,14 +174,27 @@ while true; do
         ts_type_into_pane "$TS_TARGET" "$cmd"
         if [ "$TS_AUTO" -eq 1 ] && [ "$force_manual" -eq 0 ] && ts_is_safe_readonly_command "$cmd" && ! ts_is_dangerous_command "$cmd"; then
             ts_auto_send "$TS_TARGET" 0.3 "$cmd" "$TS_OPERATOR"
-            ts_wait_pane_idle "$TS_TARGET" "$TS_SHELL_NAME" 120 || echo "(still running after 120s, continuing anyway)"
-            echo "-> ran: $cmd"
-            executed+=("$cmd")
+            if ts_wait_pane_idle "$TS_TARGET" "$TS_SHELL_NAME" 120; then
+                echo "-> ran: $cmd"
+                executed+=("$cmd")
+            else
+                # Pane never went idle (e.g. stuck at a password prompt the
+                # user hasn't answered yet). Typing the next queued command
+                # now would land on that still-busy input line with no
+                # separator, silently gluing two commands into one garbled
+                # line. Stop the batch instead; remaining lines are lost.
+                echo "-> still running after 120s; stopping here so later commands aren't typed over it. Check the left panel, then re-issue the rest."
+                break
+            fi
         else
             if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR"; then
-                ts_wait_pane_idle "$TS_TARGET" "$TS_SHELL_NAME" 120 || echo "(still running after 120s, continuing anyway)"
-                echo "-> ran: ${TS_CONFIRMED_COMMAND:-$cmd}"
-                executed+=("${TS_CONFIRMED_COMMAND:-$cmd}")
+                if ts_wait_pane_idle "$TS_TARGET" "$TS_SHELL_NAME" 120; then
+                    echo "-> ran: ${TS_CONFIRMED_COMMAND:-$cmd}"
+                    executed+=("${TS_CONFIRMED_COMMAND:-$cmd}")
+                else
+                    echo "-> still running after 120s; stopping here so later commands aren't typed over it. Check the left panel, then re-issue the rest."
+                    break
+                fi
             else
                 echo "-> cancelled: $cmd"
             fi
