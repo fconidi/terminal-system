@@ -187,7 +187,25 @@ ts_redact_secrets() {
         -e 's/([Pp]assword|[Pp]asswd|[Ss]ecret|[Tt]oken|[Aa]pi[_-]?[Kk]ey)([[:space:]]*[:=][[:space:]]*)[^[:space:]]+/\1\2[REDACTED]/g'
 }
 
-TS_SYSTEM_PROMPT="You translate natural-language instructions into shell commands for Debian/Ubuntu Linux. Reply ONLY with the required shell commands, one per line, with no explanations, no markdown, and no backticks. If more than one command is needed, list them in order, one per line."
+# The "never use printf/echo ... cosmetic section header" clause exists
+# because, for a multi-part instruction (e.g. "show me kernel, uptime,
+# memory, disk, network, and upgradable packages"), the model likes to
+# organize the reply as one "printf 'header'; actual-command" line per
+# section. On roughly 1 in 3-4 such replies it drops the separator between
+# the printf call and the command that follows it on the same line (e.g.
+# "uname -aprintf '\n=== Uptime ===\n'", reproduced repeatedly 2026-09-08,
+# including against a real live terminal-system session, not just direct
+# API calls) -- silently producing one broken, glued-together shell line
+# that then runs whatever garbage that glue happened to form. An earlier
+# attempt just asked for headers on their own line instead of banning them;
+# that measurably helped but did not eliminate the glueing, because the
+# header-then-command adjacency itself is what triggers it, on the same line
+# or the next. Banning cosmetic headers removes the adjacency entirely
+# (10/10 clean runs against the same instruction after this change, vs.
+# frequent glueing before) at the cost of losing the nicely labeled
+# multi-section output -- a deliberate trade for not risking a garbled
+# command reaching a real shell.
+TS_SYSTEM_PROMPT="You translate natural-language instructions into shell commands for Debian/Ubuntu Linux. Reply ONLY with the required shell commands, one per line, with no explanations, no markdown, and no backticks. Each line must be exactly one standalone command. Never use printf/echo purely to print a cosmetic section header or label -- if the instruction asks for several kinds of information, just list the actual commands to gather each one, in order, with no header lines and no chaining ';'/'&&' between them. If more than one command is needed, list them in order, one per line."
 
 # No forced default model: measured (2026-09-07, 5+5 interleaved runs) haiku
 # averaging 15.18s vs 10.86s for the CLI's own default on this setup -- the
@@ -297,13 +315,24 @@ ts_type_into_pane() {
     # send-keys -l argument as a command separator and swallows it (verified:
     # embedded ";" mid-argument is always safe; only a ";" that is the last
     # character of the argument needs the \; escape).
-    local target="$1" cmd="$2" delay="${3:-0.02}" chunk_size="${4:-6}" i chunk
-    for ((i = 0; i < ${#cmd}; i += chunk_size)); do
-        chunk="${cmd:$i:$chunk_size}"
-        [[ "$chunk" == *\; ]] && chunk="${chunk%;}\\;"
-        tmux send-keys -t "$target" -l -- "$chunk"
-        sleep "$delay"
-    done
+    #
+    # This used to split $cmd into small chunks and send each with its own
+    # `tmux send-keys` call plus a short sleep, for a typewriter effect. That
+    # fired 20+ separate tmux-client processes per long AI-generated command
+    # (e.g. "printf ...; uname -a; printf ...; uptime; ..." from a "show me
+    # everything" instruction), and reproduced empirically (2026-09-08): past
+    # some point in that rapid-fire sequence, tmux's pane state and the typed
+    # text desync -- a chunk boundary landing mid-command drops the text
+    # already typed and silently reproduces the whole thing on a fresh
+    # prompt, with no separator between the two commands that happened to
+    # meet at that boundary. Sending the whole string in one `send-keys -l`
+    # call (verified 5/5 against real tmux on a 272-char multi-command
+    # string) does not hit this -- there is no longer a mid-string boundary
+    # for it to happen at. Only the escape for a trailing ";" on the full
+    # string remains necessary (verified separately).
+    local target="$1" cmd="$2"
+    [[ "$cmd" == *\; ]] && cmd="${cmd%;}\\;"
+    tmux send-keys -t "$target" -l -- "$cmd"
 }
 
 ts_focus_pane() {
