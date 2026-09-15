@@ -11,6 +11,8 @@ OUT="${NAME}_${VERSION}_all.deb"
 MAN_SRC="$HERE/man/terminal-system.1"
 MAN_DST="build/usr/share/man/man1/terminal-system.1.gz"
 
+sed -i "s/^VERSION=\".*\"/VERSION=\"$VERSION\"/" build/usr/bin/terminal-system
+
 chmod +x build/usr/bin/terminal-system build/usr/bin/ts-brain
 chmod +x build/DEBIAN/postinst build/DEBIAN/postrm
 
@@ -24,7 +26,7 @@ chmod +x build/usr/bin/terminal-system build/usr/bin/ts-brain build/DEBIAN/posti
 
 installed_size="$(du -sk build/usr | awk '{print $1}')"
 sed -i "s/^Installed-Size:.*/Installed-Size: $installed_size/" build/DEBIAN/control
-(cd build && find . -type f ! -path './DEBIAN/*' | sort | xargs md5sum | sed 's|^\./||' > DEBIAN/md5sums)
+(cd build && find . -type f ! -path './DEBIAN/*' | sort | xargs md5sum | sed 's|  \./|  |' > DEBIAN/md5sums)
 
 dpkg-deb --build --root-owner-group build "$OUT"
 echo "Built: $OUT"

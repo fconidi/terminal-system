@@ -4,7 +4,7 @@
 # instructions, left panel receives the generated shell commands.
 set -uo pipefail
 
-VERSION="1.1.3"
+VERSION="1.1.8"
 SCRIPT_LIBDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib/terminal-system" && pwd)"
 if [ -f "$SCRIPT_LIBDIR/lib.sh" ]; then
     LIBDIR="$SCRIPT_LIBDIR"
@@ -75,7 +75,7 @@ Usage: terminal-system [claude|codex]
     :quit                   close the session
 
   Auto-mode only skips confirmation for a fixed allowlist of read-only
-  commands (ls, cat, grep, ps, git log/status/diff, systemctl status,
+  commands (ls, cat, grep, ps, git status/branch, systemctl status,
   and similar -- no redirects, pipes, substitution, or chaining). Anything
   else, plus a fixed set of always-dangerous patterns (rm -rf /, mkfs, dd
   to /dev, etc.), always requires manual confirmation.

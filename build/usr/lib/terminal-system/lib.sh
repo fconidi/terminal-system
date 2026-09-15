@@ -45,32 +45,33 @@ TS_DANGER_PATTERNS=(
 )
 
 ts_rm_root_dangerous() {
-    local cmd="$1" words=() i word flags="" target=""
+    local cmd="$1" words=() i word flags="" targets=()
     read -r -a words <<< "$cmd"
     for ((i = 0; i < ${#words[@]}; i++)); do
-        [ "${words[$i]}" = "rm" ] || continue
+        [ "${words[$i]##*/}" = "rm" ] || continue
         for ((i = i + 1; i < ${#words[@]}; i++)); do
             word="${words[$i]}"
             [ "$word" = "--" ] && continue
             if [[ "$word" == -* ]]; then
                 flags+="$word"
-                continue
+            else
+                targets+=("$word")
             fi
-            target="$word"
-            break
         done
         [[ "$flags" == *r* && "$flags" == *f* ]] || return 1
-        [[ "$target" = "/" || "$target" = "/*" ]] && return 0
+        for word in "${targets[@]}"; do
+            [[ "$word" = "/" || "$word" = "/*" ]] && return 0
+        done
         return 1
     done
     return 1
 }
 
 ts_chmod_root_dangerous() {
-    local cmd="$1" words=() i word recursive=0 mode="" target=""
+    local cmd="$1" words=() i word recursive=0 mode="" targets=()
     read -r -a words <<< "$cmd"
     for ((i = 0; i < ${#words[@]}; i++)); do
-        [ "${words[$i]}" = "chmod" ] || continue
+        [ "${words[$i]##*/}" = "chmod" ] || continue
         for ((i = i + 1; i < ${#words[@]}; i++)); do
             word="${words[$i]}"
             if [[ "$word" == -* ]]; then
@@ -79,12 +80,14 @@ ts_chmod_root_dangerous() {
             fi
             if [ -z "$mode" ]; then
                 mode="$word"
-                continue
+            else
+                targets+=("$word")
             fi
-            target="$word"
-            break
         done
-        [ "$recursive" -eq 1 ] && [ -n "$mode" ] && [ "$target" = "/" ] && return 0
+        [ "$recursive" -eq 1 ] && [ -n "$mode" ] || return 1
+        for word in "${targets[@]}"; do
+            [ "$word" = "/" ] && return 0
+        done
         return 1
     done
     return 1
@@ -113,19 +116,31 @@ ts_is_safe_readonly_command() {
     local cmd="$1" words=() base sub w
     [[ "$cmd" =~ [\<\>\|\`\;\&] ]] && return 1
     [[ "$cmd" == *'$('* ]] && return 1
+    # ${name:=word} / ${name=word} assign name as a side effect of expansion --
+    # e.g. `echo ${PROMPT_COMMAND:=rm -rf /tmp/x}` reads as pure output but sets
+    # PROMPT_COMMAND, which bash then runs unattended at the next prompt. This
+    # is the only parameter-expansion form that mutates state; :-/:+/:? do not.
+    [[ "$cmd" =~ \$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?:?=[^=] ]] && return 1
     read -r -a words <<< "$cmd"
     [ "${#words[@]}" -eq 0 ] && return 1
     base="${words[0]##*/}"
+    # Require a bare command name resolved from PATH -- an explicit path
+    # (/tmp/evil/ls, ./cat) would let an attacker-planted binary masquerade
+    # as a trusted name and run unconfirmed.
+    [ "${words[0]}" != "$base" ] && return 1
     case "$base" in
         find)
             for w in "${words[@]}"; do
-                case "$w" in -delete | -exec | -execdir | -fprintf | -fls | -ok | -okdir) return 1 ;; esac
+                case "$w" in -delete | -exec | -execdir | -fprintf | -fprint | -fprint0 | -fls | -ok | -okdir) return 1 ;; esac
             done
             return 0
             ;;
         git)
+            # log/diff/show excluded: they render diffs/blobs and can invoke a
+            # repo- or user-configured core.pager, diff.external, or textconv
+            # filter -- arbitrary local exec if that config is compromised.
             sub="${words[1]:-}"
-            case "$sub" in status | log | diff | show | branch | remote | describe | blame | shortlog) return 0 ;; *) return 1 ;; esac
+            case "$sub" in status | branch | remote | describe | blame | shortlog) return 0 ;; *) return 1 ;; esac
             ;;
         systemctl)
             sub="${words[1]:-}"
@@ -164,7 +179,24 @@ ts_is_safe_readonly_command() {
             done
             return 0
             ;;
-        ls | cat | grep | egrep | fgrep | head | wc | ps | df | du | free | uptime | whoami | id | pwd | uname | which | type | stat | file | tree | lsblk | lscpu | lsusb | lspci | printenv | history | echo | printf | w | who | last)
+        printf)
+            # -v writes the result into an arbitrary named variable instead of
+            # printing it (e.g. `printf -v PROMPT_COMMAND '...'` -- same
+            # unattended-exec-at-next-prompt trick as the ${var:=} case above).
+            for w in "${words[@]:1}"; do
+                case "$w" in -v*) return 1 ;; esac
+            done
+            return 0
+            ;;
+        history)
+            # Bare/numeric listing only -- `-w [file]`, `-r [file]` etc. read
+            # or overwrite arbitrary files.
+            for w in "${words[@]:1}"; do
+                case "$w" in -*) return 1 ;; esac
+            done
+            return 0
+            ;;
+        ls | cat | grep | egrep | fgrep | head | wc | ps | df | du | free | uptime | whoami | id | pwd | uname | which | type | stat | file | tree | lsblk | lscpu | lsusb | lspci | printenv | echo | w | who | last)
             return 0
             ;;
         *)
@@ -226,7 +258,7 @@ ts_call_engine() {
             ;;
         codex)
             [ -n "$TS_CODEX_MODEL" ] && model_args=(--model "$TS_CODEX_MODEL")
-            tmpfile="$(mktemp)"
+            tmpfile="$(mktemp)" || return 1
             "$bin" exec -s read-only --skip-git-repo-check "${model_args[@]}" --output-last-message "$tmpfile" -- "$TS_SYSTEM_PROMPT
 $prompt" > /dev/null 2>&1
             rc=$?
@@ -276,7 +308,9 @@ TS_HISTORY_MAX="${TS_HISTORY_MAX:-5}"
 # Opt-in: left-panel output can contain secrets, file contents, or anything
 # else a command printed. Off by default -- nothing is kept as AI context,
 # or sent in a future prompt, unless the user turns it on with :context on.
-TS_CONTEXT_ENABLED="${TS_CONTEXT_ENABLED:-0}"
+# Not env-overridable on purpose: ts-brain resets this at the start of every
+# session, so an ambient env var could never enable it silently either way.
+TS_CONTEXT_ENABLED=0
 
 ts_history_append() {
     [ "$TS_CONTEXT_ENABLED" -eq 1 ] || return 0
@@ -331,6 +365,13 @@ ts_type_into_pane() {
     # for it to happen at. Only the escape for a trailing ";" on the full
     # string remains necessary (verified separately).
     local target="$1" cmd="$2"
+    # A literal CR or LF inside $cmd would submit the line early once typed
+    # (canonical tty line discipline ends a line on \n, and translates \r to
+    # \n on input by default) -- executing a truncated command in the target
+    # pane before the caller's own confirm-then-Enter step ever runs. Neither
+    # character can be a legitimate part of a single shell command line here.
+    cmd="${cmd//$'\r'/}"
+    cmd="${cmd//$'\n'/}"
     [[ "$cmd" == *\; ]] && cmd="${cmd%;}\\;"
     tmux send-keys -t "$target" -l -- "$cmd"
 }
@@ -351,6 +392,19 @@ ts_command_needs_input() {
 ts_refocus_after_signal() {
     local return_target="$1" signal="$2"
     (
+        # Unbounded wait, deliberately: this only blocks past the target
+        # pane's natural lifetime if that pane was killed before the appended
+        # "tmux wait-for -S" suffix ever ran, and it is bounded by the tmux
+        # *session's* lifetime regardless -- the server hangs up on this
+        # client (making `wait-for` return) once the session it belongs to
+        # ends. A tried fix that killed the waiter after a timeout was
+        # reverted: killing this backgrounded job's PID does not reliably
+        # reach the actual `tmux` client process across all invocation paths
+        # (verified against this project's own test harness, which runs
+        # `tmux` as a shell function -- killing the wrapper job it creates
+        # orphans the real client instead of stopping it), so the added
+        # complexity bought correctness only in the common case while
+        # behaving unpredictably outside it.
         tmux wait-for "$signal" > /dev/null 2>&1 || exit 0
         ts_pane_alive "$return_target" || exit 0
         ts_focus_pane "$return_target"
