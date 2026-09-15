@@ -3,6 +3,43 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.1.8] - 2026-09-15
+
+### Security
+- Auto-mode's read-only allowlist let `echo ${VAR:=word}` / `echo
+  ${VAR=word}` and `printf -v VAR word` through as "safe": bash resolves
+  the assignment as a side effect of expansion, so e.g. `echo
+  ${PROMPT_COMMAND:=rm -rf /tmp/x}` set `PROMPT_COMMAND` and had it run
+  unattended at the next shell prompt, fully bypassing confirmation.
+  Both forms are now blocked; `printf -v` specifically is rejected,
+  `history -w`/`-r` (arbitrary file write/read) also now rejected.
+- `find` allowlist blocked `-fprintf` but not `-fprint`/`-fprint0`,
+  which can also write matched paths to an arbitrary file. Blocked.
+- The allowlist checked only the basename of the command, so
+  `/tmp/evil/ls` or `./cat` ran as if they were the trusted system
+  `ls`/`cat`. Now requires a bare, PATH-resolved command name.
+- Removed `git log`/`diff`/`show` from the allowlist: any of the three
+  can invoke a repo- or user-configured external pager, diff, or
+  textconv filter.
+- A literal CR or LF inside AI-generated output, typed into the pane
+  before the confirm prompt is shown, could submit a partial command
+  early (canonical tty line discipline ends a line on either). Both are
+  now stripped before typing.
+- The `rm`/`chmod` dangerous-command matcher missed absolute-path
+  invocations (`/bin/rm -rf /`) and flags placed after the target
+  (`rm -r / -f`); it now matches by basename and scans every token.
+
+### Fixed
+- `build-deb.sh`'s `DEBIAN/md5sums` generation used a sed pattern
+  anchored to the start of the line, which never matched `md5sum`'s
+  actual `hash  ./path` separator -- every recorded path kept a stray
+  leading `./`. Fixed to match the real separator.
+- The `terminal-system` binary's own `VERSION` string was hardcoded and
+  had drifted to `1.1.3` while the package moved on to 1.1.7; `--version`
+  and the startup banner showed the wrong version. `build-deb.sh` now
+  syncs it from `DEBIAN/control` at build time.
+- `mktemp` failure in `ts_call_engine`'s codex path was not checked.
+
 ## [1.1.5] - 2026-09-07
 
 ### Security
