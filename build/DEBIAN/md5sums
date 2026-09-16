@@ -1,7 +1,7 @@
 a5a69dba6d52aeeb45cc34c80383c321  etc/xdg/menus/applications-merged/terminal-system.menu
-eca15e2441ebb83ab937463ba59561d1  usr/bin/terminal-system
-1c4e184f356789ce011dfee8f73c70f2  usr/bin/ts-brain
-6d37d9faf9acc2e73a4c43734894fa3f  usr/lib/terminal-system/lib.sh
+dfd6c3224559c0558abf975efe9adc0b  usr/bin/terminal-system
+a6fdf446d489c0e23227073d9d564223  usr/bin/ts-brain
+3ec08f55ead6d308fda2b6ada7290a98  usr/lib/terminal-system/lib.sh
 1f3fd25ff5c0706fac6ee243e3d0f0ea  usr/share/applications/terminal-system.desktop
 a4ec97cf928a9ee95cc5f6636a995d60  usr/share/doc/terminal-system/README
 77dbe2560724ffad26ff1b1376645803  usr/share/icons/hicolor/128x128/apps/terminal-system.png
