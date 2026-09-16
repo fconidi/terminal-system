@@ -3,6 +3,21 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.1.9] - 2026-09-16
+
+### Fixed
+- The auto/confirm send path polled tmux's `pane_current_command` to
+  decide a typed command had finished, but that reading can't tell
+  "hasn't started yet" from "already finished" -- under real scheduling
+  load, the next queued command could get typed while the previous
+  one's Enter was still unprocessed, landing on the same open input
+  line with no separator (e.g. `lscpu` + `free -h` glued into
+  `lscpufree -h`, then executed as one broken command). Replaced the
+  poll with an in-band completion marker: the auto path now types the
+  command and its marker together in a single `send-keys` call, and the
+  confirm path appends the marker onto the already-settled pending
+  line. Removed the now-dead `ts_wait_pane_idle`/`ts_pane_shell_name`.
+
 ## [1.1.8] - 2026-09-15
 
 ### Security
