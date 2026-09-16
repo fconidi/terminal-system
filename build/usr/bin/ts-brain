@@ -23,7 +23,6 @@ TS_CONTEXT_ENABLED=0
 force_manual=0
 
 TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: no AI engine found (claude, codex)."; exit 1; }
-TS_SHELL_NAME="$(ts_pane_shell_name "$TS_TARGET")"
 
 echo "terminal-system -- engine: $TS_ENGINE (auto: off, context: off)"
 echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :engine claude|codex, :quit"
@@ -37,7 +36,7 @@ ts_other_engine() {
 }
 
 ts_run_manual_command() {
-    local cmd="$1" output
+    local cmd="$1" output signal
     if [ -z "$cmd" ]; then
         echo "usage: :cmd <shell command>"
         return 0
@@ -48,8 +47,9 @@ ts_run_manual_command() {
         exit 0
     fi
     ts_type_into_pane "$TS_TARGET" "$cmd"
-    if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR"; then
-        ts_wait_pane_idle "$TS_TARGET" "$TS_SHELL_NAME" 120 || echo "(still running after 120s, continuing anyway)"
+    signal="ts-done-$$-${RANDOM}${RANDOM}"
+    if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR" "$signal"; then
+        ts_wait_for_signal "$signal" 120 || echo "(still running after 120s, continuing anyway)"
         echo "-> ran: ${TS_CONFIRMED_COMMAND:-$cmd}"
         sleep 0.2
         output="$(ts_capture_pane_tail "$TS_TARGET" 20)"
@@ -171,14 +171,16 @@ while true; do
             tmux kill-session -t "$TS_SESSION" 2> /dev/null
             exit 0
         fi
-        ts_type_into_pane "$TS_TARGET" "$cmd"
+        signal="ts-done-$$-${RANDOM}${RANDOM}"
         if [ "$TS_AUTO" -eq 1 ] && [ "$force_manual" -eq 0 ] && ts_is_safe_readonly_command "$cmd" && ! ts_is_dangerous_command "$cmd"; then
-            ts_auto_send "$TS_TARGET" 0.3 "$cmd" "$TS_OPERATOR"
-            if ts_wait_pane_idle "$TS_TARGET" "$TS_SHELL_NAME" 120; then
+            # ts_auto_send types cmd itself (combined with the marker) --
+            # no separate pre-type here, unlike the confirm branch below.
+            ts_auto_send "$TS_TARGET" 0.3 "$cmd" "$TS_OPERATOR" "$signal"
+            if ts_wait_for_signal "$signal" 120; then
                 echo "-> ran: $cmd"
                 executed+=("$cmd")
             else
-                # Pane never went idle (e.g. stuck at a password prompt the
+                # Signal never fired (e.g. stuck at a password prompt the
                 # user hasn't answered yet). Typing the next queued command
                 # now would land on that still-busy input line with no
                 # separator, silently gluing two commands into one garbled
@@ -187,8 +189,9 @@ while true; do
                 break
             fi
         else
-            if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR"; then
-                if ts_wait_pane_idle "$TS_TARGET" "$TS_SHELL_NAME" 120; then
+            ts_type_into_pane "$TS_TARGET" "$cmd"
+            if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR" "$signal"; then
+                if ts_wait_for_signal "$signal" 120; then
                     echo "-> ran: ${TS_CONFIRMED_COMMAND:-$cmd}"
                     executed+=("${TS_CONFIRMED_COMMAND:-$cmd}")
                 else
