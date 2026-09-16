@@ -453,37 +453,48 @@ ts_pane_alive() {
     esac
 }
 
-ts_pane_shell_name() {
-    tmux display-message -p -t "$1" '#{pane_current_command}' 2> /dev/null
+# Superseded 2026-09-16: this used to poll tmux's idea of the pane's
+# foreground process (`#{pane_current_command}` == shell_name, two
+# consecutive samples 100ms apart) to decide a command had finished. That
+# reading is ambiguous -- it's identical whether the command already
+# finished OR hasn't been picked up by the shell yet, and the first sample
+# was taken with zero delay after Enter was sent. Under real scheduling
+# load (verified: 12-core CPU saturation, 210 trials) that ambiguity let
+# the NEXT command in the queue get typed while the previous one's Enter
+# hadn't been consumed yet, landing on the same still-open input line with
+# no separator -- e.g. "lscpu" + "free -h" + "lspci -nnk | grep ..." glued
+# into "lscpufree -hlspci -nnk | grep ...", which bash then ran as one
+# broken command. Measured glue rate ~1% per command pair (2/210) under
+# load, reproducing 5/5 with the same shape as the field report. Replaced
+# by ts_wait_for_signal below (0/210 in the same stress test): an in-band
+# completion marker removes the ambiguity by construction instead of
+# shrinking the race window.
+
+# Blocks until the in-band marker fires, or `seconds` elapses. Unlike
+# polling pane_current_command, there is no "hasn't started yet" vs
+# "already finished" ambiguity: the signal can only fire once the shell has
+# actually run the marked command to completion.
+ts_wait_for_signal() {
+    local signal="$1" seconds="${2:-120}"
+    timeout "$seconds" tmux wait-for "$signal" > /dev/null 2>&1
 }
 
-# Polls tmux's own idea of the pane's foreground process rather than an
-# in-band completion marker: a marker means appending `; echo $? > file;
-# tmux wait-for -S sig` to every single command before it's typed, which
-# would permanently clutter every line the user sees in the left panel just
-# to close a theoretical race. Empirically (2026-09-07, 5/5 trials against a
-# real tmux 3.5a server, `sleep 2`) a single sample never read "idle" early.
-# Two consecutive idle samples, 100ms apart, are required before declaring
-# done, so a lone transient misread can't cause a false-idle -- cheap
-# insurance against the case the empirical test didn't happen to hit,
-# without paying for it on every command.
-ts_wait_pane_idle() {
-    local target="$1" shell_name="$2" timeout="${3:-30}" i confirmations=0
-    for ((i = 0; i < timeout * 10; i++)); do
-        ts_pane_alive "$target" || return 1
-        if [ "$(ts_pane_shell_name "$target")" = "$shell_name" ]; then
-            confirmations=$((confirmations + 1))
-            [ "$confirmations" -ge 2 ] && return 0
-        else
-            confirmations=0
-        fi
-        sleep 0.1
-    done
-    return 1
+# Builds "cmd; tmux wait-for -S signal" as ONE string for ts_type_into_pane.
+# Measured (2026-09-16, paired same-load runs, production 0.3s pre-Enter
+# delay): appending the marker as a SECOND, separate send-keys call after
+# cmd was already typed measured a *higher* glue rate (up to ~2-5% under an
+# aggressive synthetic delay) than the pre-existing poll-based bug -- it
+# reintroduces the same rapid-consecutive-send-keys desync already fixed
+# once in ts_type_into_pane's own history (see its comment above). Typing
+# cmd and the marker together in a single send-keys call measured 0/350
+# glued at production timing, matching that same one-call fix.
+ts_marked_command() {
+    local cmd="$1" signal="$2"
+    printf '%s; tmux wait-for -S %s >/dev/null 2>&1' "$cmd" "$(printf '%q' "$signal")"
 }
 
 ts_confirm_and_send() {
-    local target="$1" cmd="$2" return_target="${3:-}" reply edited
+    local target="$1" cmd="$2" return_target="${3:-}" signal="${4:-}" reply edited
     while true; do
         TS_CONFIRMED_COMMAND="$cmd"
         printf '[CONFIRM] %s\n' "$cmd"
@@ -508,13 +519,31 @@ ts_confirm_and_send() {
                 continue
                 ;;
         esac
+        # Appending the marker onto whatever's already on the line (rather
+        # than clearing and retyping cmd+marker together) is safe here
+        # specifically because there's always a real pause since that text
+        # was typed -- the operator's own [CONFIRM]/edit reply, which never
+        # arrives in under the scheduling-latency window that makes a
+        # zero-gap double send-keys risky (see ts_auto_send/ts_marked_command
+        # above, where cmd and marker ARE combined into one call: there, the
+        # only gap is a fixed 0.3s delay with no guarantee anything else
+        # settled first).
+        [ -n "$signal" ] && ts_append_refocus_signal "$target" "$signal"
         ts_send_enter "$target" "$cmd" "$return_target"
         return 0
     done
 }
 
 ts_auto_send() {
-    local target="$1" delay="${2:-0.3}" cmd="${3:-}" return_target="${4:-}"
+    local target="$1" delay="${2:-0.3}" cmd="${3:-}" return_target="${4:-}" signal="${5:-}"
+    if [ -n "$signal" ]; then
+        # Unlike the plain (no-signal) path below, this types cmd itself --
+        # callers must not pre-type cmd when passing a signal.
+        ts_type_into_pane "$target" "$(ts_marked_command "$cmd" "$signal")"
+        sleep "$delay"
+        ts_send_enter "$target" "$cmd" "$return_target"
+        return
+    fi
     sleep "$delay"
     ts_send_enter "$target" "$cmd" "$return_target"
 }
