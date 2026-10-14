@@ -99,15 +99,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 - Pane typing now sends 6-character chunks per `tmux send-keys` call
   instead of one call per character -- ~6x fewer subprocess spawns.
-  Measured: 0.664s -> 0.377s to type a 67-character command (avg of 5
-  runs).
 - AI engine model is now overridable via `TS_CLAUDE_MODEL` /
   `TS_CODEX_MODEL` env vars (unset by default, same behavior as
-  before). Tried defaulting Claude to `haiku` on the assumption that a
-  lighter model would be faster for the simple instruction-to-command
-  translation task; measured it was actually slower (15.18s avg vs
-  10.86s avg for the CLI's own default, 5+5 interleaved runs), so left
-  the default unset.
+  before).
 
 ### Fixed
 - `tmux send-keys -l` silently drops an unescaped `;` when it is the
@@ -161,6 +155,3 @@ Initial release.
 - In-memory session history and prompt builder (nothing persisted to
   disk).
 - Debian packaging (`build-deb.sh`, `.deb` layout, man page).
-- Test suite: library unit tests, tmux helper tests, launcher smoke
-  test, and an end-to-end `ts-brain` test, all running against stubbed
-  AI engines with no live tmux display required.

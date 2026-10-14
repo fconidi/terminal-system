@@ -91,28 +91,6 @@ sudo install -Dm644 build/usr/lib/terminal-system/lib.sh /usr/local/lib/terminal
 relative to its own path), falling back to `/usr/lib/terminal-system/lib.sh`
 — adjust the paths above to match if you install outside `/usr/local`.
 
-## Testing
-
-```bash
-bash tests/test_lib.sh
-bash tests/test_tmux_helpers.sh
-bash tests/test_launcher_smoke.sh
-bash tests/test_ts_brain_e2e.sh
-```
-
-No live tmux display or network access required; the AI engines are
-replaced by stubs under `tests/stubs/`.
-
-## Syncing from syslinuxos-packages
-
-Day-to-day fixes happen in the `syslinuxos-packages` monorepo (which also
-builds and publishes the SysLinuxOS `.deb`). To pull those changes into
-this repo with full commit history via `git subtree`:
-
-```bash
-scripts/sync-from-monorepo.sh [path-to-syslinuxos-packages]
-```
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
