@@ -72,13 +72,25 @@ typed into the left panel in real time for you to review and confirm.
   for confirmation, even in auto-mode. Long commands are no longer
   rejected by a word limit. Without `python3`, or if the reply is plain
   text, the previous line-per-command handling is used.
+- If a command stops at a prompt in the left panel (a yes/no question,
+  a password or passphrase, "Continue?", a pager), focus moves there so
+  you can answer it, and returns to the instruction panel afterwards.
+  This is detected from what is on screen, not from the command name.
+- Long commands no longer stop the batch after 120 s: the instruction
+  panel prints a "still running" line now and then, rings the bell and
+  shows a tmux message when a command that ran 15 s or more finishes,
+  and Ctrl-C there stops waiting (the command keeps running).
+- `:watch` asks for a one-time acknowledgement before it first sends
+  output to the AI provider. F9 (or `:watch pause`) stops it from
+  reading anything; F10 (or `:watch resume`) continues. Output produced
+  while paused is never sent afterwards.
 - The AI model used for translation can be overridden with
   `TS_CLAUDE_MODEL` / `TS_CODEX_MODEL` (unset by default, which uses
   each CLI's own default model).
 
 Right-panel commands: `:cmd <command>` (run manually, skip the AI),
 `:manual` (prompt for a manual command), `:auto readonly|off`,
-`:context on|off|show|clear`, `:fix [on|off]`, `:follow <goal>`, `:watch on|all|off`, `:engine claude|codex`, `:quit`. Full
+`:context on|off|show|clear`, `:fix [on|off]`, `:follow <goal>`, `:watch on|all|off|pause|resume`, `:engine claude|codex`, `:quit`. Full
 details in `man/terminal-system.1`.
 
 ## Requirements

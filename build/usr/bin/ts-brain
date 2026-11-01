@@ -32,7 +32,7 @@ force_manual=0
 TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: no AI engine found (claude, codex)."; exit 1; }
 
 echo "terminal-system -- engine: $TS_ENGINE (auto: off, context: off)"
-echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :fix [on|off], :follow <goal>, :watch on|all|off, :engine claude|codex, :quit"
+echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :fix [on|off], :follow <goal>, :watch on|all|off|pause|resume, :engine claude|codex, :quit"
 
 ts_other_engine() {
     case "$1" in
@@ -88,7 +88,7 @@ ts_execute_commands() {
             # ts_auto_send types cmd itself (combined with the marker) --
             # no separate pre-type here, unlike the confirm branch below.
             ts_auto_send "$TS_TARGET" 0.3 "$cmd" "$TS_OPERATOR" "$signal"
-            if ts_wait_for_signal "$signal" 120; then
+            if ts_wait_command "$signal" "$cmd"; then
                 ts_report_result "$cmd" "$signal"
                 executed+=("$cmd")
             else
@@ -97,17 +97,17 @@ ts_execute_commands() {
                 # now would land on that still-busy input line with no
                 # separator, silently gluing two commands into one garbled
                 # line. Stop the batch instead; remaining lines are lost.
-                echo "-> still running after 120s; stopping here so later commands aren't typed over it. Check the left panel, then re-issue the rest."
+                ts_wait_stopped_message
                 break
             fi
         else
             ts_type_into_pane "$TS_TARGET" "$cmd"
             if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR" "$signal"; then
-                if ts_wait_for_signal "$signal" 120; then
+                if ts_wait_command "$signal" "${TS_CONFIRMED_COMMAND:-$cmd}"; then
                     ts_report_result "${TS_CONFIRMED_COMMAND:-$cmd}" "$signal"
                     executed+=("${TS_CONFIRMED_COMMAND:-$cmd}")
                 else
-                    echo "-> still running after 120s; stopping here so later commands aren't typed over it. Check the left panel, then re-issue the rest."
+                    ts_wait_stopped_message
                     break
                 fi
             else
@@ -192,6 +192,31 @@ ${out}
     echo "step limit reached ($TS_FOLLOW_MAX); stopping. Run :follow again to continue."
 }
 
+# One-time acknowledgement that :watch sends terminal output to the AI
+# provider. Remembered per user in the XDG state directory.
+ts_watch_consent() {
+    local dir file reply
+    dir="${XDG_STATE_HOME:-$HOME/.local/state}/terminal-system"
+    file="$dir/watch-consent"
+    [ -f "$file" ] && return 0
+    cat << 'NOTICE'
+:watch reads the left panel and sends its recent output to the AI
+provider you selected, through your authenticated CLI (normal account
+usage). Secrets are redacted on a best-effort basis only. Press F9 or run
+:watch pause at any time to stop it from reading anything.
+NOTICE
+    printf 'Allow this? y = yes, anything else = no: '
+    IFS= read -r reply || return 1
+    case "$reply" in
+        y|Y|yes|YES)
+            mkdir -p "$dir" 2> /dev/null && date +%F > "$file" 2> /dev/null
+            return 0
+            ;;
+    esac
+    echo "watch: not enabled"
+    return 1
+}
+
 # :watch -- opens/closes the observer panel below this one.
 ts_watch_alive() {
     [ -n "$TS_WATCH_PANE" ] && ts_pane_alive "$TS_WATCH_PANE"
@@ -218,11 +243,26 @@ ts_watch() {
                 echo "watch: ts-watch not found."
                 return 0
             fi
+            ts_watch_consent || return 0
+            tmux set-option -t "$TS_SESSION" @ts_watch_paused 0 2> /dev/null
             TS_WATCH_PANE="$(tmux split-window -d -v -l 12 -t "$TS_OPERATOR" -P -F '#{pane_id}' \
                 "PATH='$PATH' exec '$TS_WATCH_BIN' '$TS_TARGET' '$TS_ENGINE' '$mode'")" || { echo "watch: could not open the panel."; TS_WATCH_PANE=""; return 0; }
             echo "watch: on ($mode) -- the left panel's recent output (secrets redacted) is sent to $TS_ENGINE; advice appears in the panel below, nothing is typed for you"
             ;;
-        *) echo "usage: :watch on|all|off" ;;
+        pause|resume)
+            if ! ts_watch_alive; then
+                echo "watch: not running (use :watch on)"
+                return 0
+            fi
+            if [ "$mode" = "pause" ]; then
+                tmux set-option -t "$TS_SESSION" @ts_watch_paused 1
+                echo "watch: paused -- nothing is read or sent"
+            else
+                tmux set-option -t "$TS_SESSION" @ts_watch_paused 0
+                echo "watch: resumed"
+            fi
+            ;;
+        *) echo "usage: :watch on|all|off|pause|resume" ;;
     esac
 }
 
@@ -240,7 +280,7 @@ ts_run_manual_command() {
     ts_type_into_pane "$TS_TARGET" "$cmd"
     signal="ts-done-$$-${RANDOM}${RANDOM}"
     if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR" "$signal"; then
-        ts_wait_for_signal "$signal" 120 || echo "(still running after 120s, continuing anyway)"
+        ts_wait_command "$signal" "${TS_CONFIRMED_COMMAND:-$cmd}" || ts_wait_stopped_message
         ts_report_result "${TS_CONFIRMED_COMMAND:-$cmd}" "$signal"
         sleep 0.2
         output="$(ts_capture_pane_tail "$TS_TARGET" 20)"

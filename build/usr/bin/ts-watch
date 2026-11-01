@@ -26,9 +26,11 @@ trap 'rm -rf "$WORK"' EXIT
 : > "$WORK/current"
 
 echo "watching the left panel (mode: $MODE, engine: $TS_ENGINE)."
-echo "Its recent output (secrets redacted) is sent to the AI engine. Close this panel or use :watch off to stop."
+echo "Its recent output (secrets redacted) is sent to the AI engine. F9 pauses, F10 resumes (or :watch pause / :watch resume); :watch off closes this panel."
 
 lang="${TS_WATCH_LANGUAGE:-${LANG:-en}}"
+session="$(tmux display-message -p -t "$TS_TARGET" '#{session_name}' 2> /dev/null)"
+was_paused=0
 last_hash=""
 changed_at=0
 first_change=0
@@ -39,6 +41,22 @@ while true; do
     sleep 1
     ts_pane_alive "$TS_TARGET" || exit 0
     now=$(date +%s)
+    # Paused (F9, or :watch pause): nothing is read or sent. What appeared
+    # while paused is marked as already seen, so it is never sent later.
+    if [ -n "$session" ] && [ "$(tmux show-option -qv -t "$session" @ts_watch_paused 2> /dev/null)" = "1" ]; then
+        if [ "$was_paused" -eq 0 ]; then
+            was_paused=1
+            printf '\n[%s] paused -- nothing is read or sent. F10 or :watch resume to continue.\n' "$(date +%H:%M:%S)"
+        fi
+        pending=0
+        ts_watch_snapshot "$TS_TARGET" 120 > "$WORK/analyzed"
+        last_hash="$(md5sum < "$WORK/analyzed")"
+        continue
+    fi
+    if [ "$was_paused" -eq 1 ]; then
+        was_paused=0
+        printf '[%s] resumed.\n' "$(date +%H:%M:%S)"
+    fi
     ts_watch_snapshot "$TS_TARGET" 120 > "$WORK/current"
     hash="$(md5sum < "$WORK/current")"
     if [ "$hash" != "$last_hash" ]; then

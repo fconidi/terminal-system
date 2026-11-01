@@ -821,3 +821,97 @@ ts_watch_snapshot() {
 ts_pane_in_alt_screen() {
     [ "$(tmux display-message -p -t "$1" '#{alternate_on}' 2> /dev/null)" = "1" ]
 }
+
+# ---- waiting for a command: prompts, long runs, notifications --------------
+
+TS_MAX_WAIT="${TS_MAX_WAIT:-1800}"          # give up waiting after this many seconds
+TS_STATUS_AFTER="${TS_STATUS_AFTER:-10}"    # first "still running" line after this many seconds
+TS_STATUS_EVERY="${TS_STATUS_EVERY:-30}"    # then one every this many seconds
+TS_NOTIFY_AFTER="${TS_NOTIFY_AFTER:-15}"    # bell + tmux message when a command ran at least this long
+
+# Succeeds, printing the line, if the last non-empty lines of the pane look
+# like a program waiting for the user: a yes/no question, a password or
+# passphrase prompt, "Continue?", a pager.
+ts_pane_awaiting_input() {
+    local line
+    line="$(tmux capture-pane -p -t "$1" 2> /dev/null | grep -v '^[[:space:]]*$' | tail -n 1)"
+    [ -n "$line" ] || return 1
+    if grep -Eiq \
+        -e '\[[yn]/[yn]\]' -e '\((y/n|yes/no)' -e '\[(yes|no)/(yes|no)\]' \
+        -e 'pass(word|phrase)[^:]*:[[:space:]]*$' -e '(continue|proceed|overwrite|replace)[^?]*\?[[:space:]]*(\[.*\])?[[:space:]]*$' \
+        -e 'are you sure' -e '^\(END\)' -e '^--More--' -e '^:$' \
+        -e 'enter (a |the |your )?[a-z ]+:[[:space:]]*$' \
+        <<< "$line"; then
+        printf '%s\n' "$line"
+        return 0
+    fi
+    return 1
+}
+
+# Waits for the in-band completion signal of a command typed in the left
+# panel. Unlike a single blocking wait:
+#  - if the command stops at a prompt (yes/no, password, pager) focus moves
+#    to the left panel so it can be answered there, and comes back after;
+#  - long commands print a "still running" line now and then, and ring the
+#    bell / show a tmux message when they finish;
+#  - Ctrl-C in this panel stops the waiting (the command keeps running).
+# Sets TS_WAIT_REASON to "timeout" or "interrupted" when returning 1.
+TS_WAIT_REASON=""
+ts_wait_command() {
+    local signal="$1" cmd="$2" target="${3:-${TS_TARGET:-}}" back="${4:-${TS_OPERATOR:-}}"
+    local start=$SECONDS elapsed next_status line last_prompt="" focused=0 got=0 interrupted=0
+    TS_WAIT_REASON=""
+    next_status=$((start + TS_STATUS_AFTER))
+    trap 'interrupted=1' INT
+    while true; do
+        if timeout 0.5 tmux wait-for "$signal" > /dev/null 2>&1; then
+            got=1
+            break
+        fi
+        if [ "$interrupted" -eq 1 ]; then
+            TS_WAIT_REASON="interrupted"
+            break
+        fi
+        elapsed=$((SECONDS - start))
+        if [ "$elapsed" -ge "$TS_MAX_WAIT" ]; then
+            TS_WAIT_REASON="timeout"
+            break
+        fi
+        if line="$(ts_pane_awaiting_input "$target")"; then
+            if [ "$line" != "$last_prompt" ]; then
+                last_prompt="$line"
+                focused=1
+                ts_focus_pane "$target"
+                echo "   waiting for your input in the left panel: $line"
+            fi
+        else
+            last_prompt=""
+        fi
+        if [ "$SECONDS" -ge "$next_status" ]; then
+            line="$(tmux capture-pane -p -t "$target" 2> /dev/null | grep -v '^[[:space:]]*$' | tail -n 1)"
+            echo "   still running (${elapsed}s): ${line:0:100}   [Ctrl-C here stops waiting]"
+            next_status=$((SECONDS + TS_STATUS_EVERY))
+        fi
+    done
+    trap - INT
+    if [ "$focused" -eq 1 ] && [ -n "$back" ] && ts_pane_alive "$back"; then
+        ts_focus_pane "$back"
+    fi
+    if [ "$got" -eq 1 ]; then
+        elapsed=$((SECONDS - start))
+        if [ "$elapsed" -ge "$TS_NOTIFY_AFTER" ]; then
+            echo "   finished after ${elapsed}s"
+            printf '\a'
+            tmux display-message -d 5000 -t "${TS_SESSION:-$target}" "terminal-system: finished after ${elapsed}s: ${cmd:0:60}" > /dev/null 2>&1
+        fi
+        return 0
+    fi
+    return 1
+}
+
+ts_wait_stopped_message() {
+    case "$TS_WAIT_REASON" in
+        interrupted) echo "-> stopped waiting; the command may still be running in the left panel. Check it, then re-issue the rest." ;;
+        *) echo "-> still running after ${TS_MAX_WAIT}s; stopping here so later commands aren't typed over it. Check the left panel, then re-issue the rest." ;;
+    esac
+}

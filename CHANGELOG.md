@@ -3,6 +3,25 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.5.0] - 2026-11-01
+
+### Added
+- Prompt detection: a yes/no question, password or passphrase prompt,
+  "Continue?" or pager on the left panel's screen moves focus there and
+  brings it back afterwards. Before, only the command name decided this.
+- Long-running commands: "still running" status lines, a bell and a
+  tmux message on completion of commands that ran 15 s or more, and
+  Ctrl-C to stop waiting. `TS_STATUS_AFTER`, `TS_STATUS_EVERY`,
+  `TS_NOTIFY_AFTER`, `TS_MAX_WAIT` adjust the timings.
+- `:watch` shows a one-time notice about what is sent to the AI
+  provider and asks for acknowledgement. `:watch pause` / `:watch
+  resume` and the F9 / F10 keys stop and restart reading; output
+  produced while paused is never sent.
+
+### Changed
+- The 120-second limit that abandoned the rest of a batch is now 30
+  minutes, and only after the status lines above have been shown.
+
 ## [1.4.0] - 2026-11-01
 
 ### Added

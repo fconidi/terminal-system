@@ -432,6 +432,10 @@ watch_resp="$(mktemp)"
 printf 'The directory is missing.\n$ mkdir /nonexistent-watch-dir\n' > "$watch_resp"
 export TS_STUB_RESPONSE_FILE="$watch_resp"
 tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE_FILE "$watch_resp" 2>/dev/null
+consent_dir="$(mktemp -d)"
+mkdir -p "$consent_dir/terminal-system"; date +%F > "$consent_dir/terminal-system/watch-consent"
+export XDG_STATE_HOME="$consent_dir"
+tmux -S "$SOCK" set-environment -g XDG_STATE_HOME "$consent_dir" 2>/dev/null
 start_session s12
 tmux -S "$SOCK" send-keys -t s12:0.1 ":watch on" C-m
 sleep 1.5
@@ -443,6 +447,23 @@ watch_out="$(tmux -S "$SOCK" capture-pane -p -t s12:0.2 -S -20)"
 check "scenario 12: observer prints advice for an error" "$watch_out" "The directory is missing."
 left_out="$(tmux -S "$SOCK" capture-pane -p -t s12:0.0 -S -20)"
 not_contains "scenario 12: observer never types into the left panel" "$left_out" "mkdir /nonexistent-watch-dir"
+# pause: output produced while paused must never reach the AI
+printf 'SHOULD-NOT-APPEAR-WHILE-PAUSED\n' > "$watch_resp"
+tmux -S "$SOCK" send-keys -t s12:0.1 ":watch pause" C-m
+sleep 2.5
+watch_out="$(tmux -S "$SOCK" capture-pane -p -t s12:0.2 -S -30)"
+check "scenario 12: pause is announced in the observer" "$watch_out" "paused"
+tmux -S "$SOCK" send-keys -t s12:0.0 "ls /nonexistent-paused-dir" C-m
+sleep 9
+watch_out="$(tmux -S "$SOCK" capture-pane -p -t s12:0.2 -S -30)"
+not_contains "scenario 12: nothing is analysed while paused" "$watch_out" "SHOULD-NOT-APPEAR-WHILE-PAUSED"
+tmux -S "$SOCK" send-keys -t s12:0.1 ":watch resume" C-m
+sleep 3
+watch_out="$(tmux -S "$SOCK" capture-pane -p -t s12:0.2 -S -30)"
+check "scenario 12: resume is announced" "$watch_out" "resumed"
+sleep 8
+watch_out="$(tmux -S "$SOCK" capture-pane -p -t s12:0.2 -S -30)"
+not_contains "scenario 12: output from the paused period is not sent after resume" "$watch_out" "SHOULD-NOT-APPEAR-WHILE-PAUSED"
 tmux -S "$SOCK" send-keys -t s12:0.1 ":watch off" C-m
 sleep 0.6
 panes="$(tmux -S "$SOCK" list-panes -t s12 | wc -l)"
@@ -482,5 +503,86 @@ sleep 0.2
 rm -f "$json_resp"
 unset TS_STUB_RESPONSE_FILE
 tmux -S "$SOCK" set-environment -gu TS_STUB_RESPONSE_FILE 2>/dev/null
+
+# --- Scenario 12b: first :watch needs consent; refusal enables nothing ---
+nc_dir="$(mktemp -d)"
+export XDG_STATE_HOME="$nc_dir"
+tmux -S "$SOCK" set-environment -g XDG_STATE_HOME "$nc_dir" 2>/dev/null
+start_session s12b
+tmux -S "$SOCK" send-keys -t s12b:0.1 ":watch on" C-m
+sleep 0.5
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s12b:0.1 -S -20)"
+check "scenario 12b: consent notice is shown" "$right_out" "sends its recent output"
+tmux -S "$SOCK" send-keys -t s12b:0.1 "n" C-m
+sleep 0.5
+panes="$(tmux -S "$SOCK" list-panes -t s12b | wc -l)"
+check "scenario 12b: refusing opens no observer" "$panes" "2"
+[ ! -e "$nc_dir/terminal-system/watch-consent" ] && echo "ok - scenario 12b: refusal is not remembered" || { echo "FAIL - scenario 12b: refusal was remembered"; FAIL=1; }
+tmux -S "$SOCK" send-keys -t s12b:0.1 ":watch on" C-m
+sleep 0.5
+tmux -S "$SOCK" send-keys -t s12b:0.1 "y" C-m
+sleep 1
+panes="$(tmux -S "$SOCK" list-panes -t s12b | wc -l)"
+check "scenario 12b: accepting opens the observer" "$panes" "3"
+[ -f "$nc_dir/terminal-system/watch-consent" ] && echo "ok - scenario 12b: consent is remembered" || { echo "FAIL - scenario 12b: consent not stored"; FAIL=1; }
+tmux -S "$SOCK" send-keys -t s12b:0.1 ":quit" C-m
+sleep 0.2
+rm -rf "$nc_dir" "$consent_dir"
+unset XDG_STATE_HOME
+tmux -S "$SOCK" set-environment -gu XDG_STATE_HOME 2>/dev/null
+
+# --- Scenario 14: a yes/no prompt in the left panel pulls focus there, then returns ---
+export TS_STUB_RESPONSE="python3 -c \"a=input('Proceed? [y/N] ');print('got-'+a)\""
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+start_session s14
+right_id="$(tmux -S "$SOCK" display-message -p -t s14:0.1 '#{pane_id}')"
+left_id="$(tmux -S "$SOCK" display-message -p -t s14:0.0 '#{pane_id}')"
+tmux -S "$SOCK" send-keys -t s14:0.1 "ask me something" C-m
+sleep 1
+tmux -S "$SOCK" send-keys -t s14:0.1 C-m
+sleep 2
+active="$(tmux -S "$SOCK" list-panes -t s14 -F '#{pane_active} #{pane_id}' | awk '$1==1{print $2}')"
+check "scenario 14: focus moved to the left panel at the prompt" "$active" "$left_id"
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s14:0.1 -S -20)"
+check "scenario 14: the right panel says why" "$right_out" "waiting for your input"
+tmux -S "$SOCK" send-keys -t s14:0.0 "y" C-m
+sleep 1.5
+active="$(tmux -S "$SOCK" list-panes -t s14 -F '#{pane_active} #{pane_id}' | awk '$1==1{print $2}')"
+check "scenario 14: focus returned to the right panel" "$active" "$right_id"
+out="$(tmux -S "$SOCK" capture-pane -p -t s14:0.0 -S -20)"
+check "scenario 14: the answer reached the program" "$out" "got-y"
+tmux -S "$SOCK" send-keys -t s14:0.1 ":quit" C-m
+sleep 0.2
+
+# --- Scenario 15: long command -> status lines, no 120 s abort, Ctrl-C stops waiting ---
+export TS_STATUS_AFTER=1 TS_STATUS_EVERY=1 TS_NOTIFY_AFTER=2
+for v in TS_STATUS_AFTER TS_STATUS_EVERY TS_NOTIFY_AFTER; do tmux -S "$SOCK" set-environment -g "$v" "${!v}" 2>/dev/null; done
+export TS_STUB_RESPONSE="sleep 4"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+start_session s15
+tmux -S "$SOCK" send-keys -t s15:0.1 "wait a bit" C-m
+sleep 1
+tmux -S "$SOCK" send-keys -t s15:0.1 C-m
+sleep 7
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s15:0.1 -S -30)"
+check "scenario 15: long command prints a still-running line" "$right_out" "still running"
+check "scenario 15: long command reports its duration" "$right_out" "finished after"
+check "scenario 15: result is still reported" "$right_out" "-> ran: sleep 4"
+export TS_STUB_RESPONSE="sleep 30"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+tmux -S "$SOCK" kill-session -t s15
+start_session s15b
+tmux -S "$SOCK" send-keys -t s15b:0.1 "wait long" C-m
+sleep 1
+tmux -S "$SOCK" send-keys -t s15b:0.1 C-m
+sleep 3
+tmux -S "$SOCK" send-keys -t s15b:0.1 C-c
+sleep 1.5
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s15b:0.1 -S -30)"
+check "scenario 15: Ctrl-C stops waiting" "$right_out" "stopped waiting"
+tmux -S "$SOCK" send-keys -t s15b:0.0 C-c
+for v in TS_STATUS_AFTER TS_STATUS_EVERY TS_NOTIFY_AFTER; do tmux -S "$SOCK" set-environment -gu "$v" 2>/dev/null; unset "$v"; done
+tmux -S "$SOCK" send-keys -t s15b:0.1 ":quit" C-m
+sleep 0.2
 
 exit $FAIL

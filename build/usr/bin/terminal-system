@@ -4,7 +4,7 @@
 # instructions, left panel receives the generated shell commands.
 set -uo pipefail
 
-VERSION="1.4.0"
+VERSION="1.5.0"
 SCRIPT_LIBDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib/terminal-system" && pwd)"
 if [ -f "$SCRIPT_LIBDIR/lib.sh" ]; then
     LIBDIR="$SCRIPT_LIBDIR"
@@ -52,6 +52,10 @@ cmd_start() {
         tmux "${sock_args[@]}" bind-key -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "xclip -in -selection clipboard"
         tmux "${sock_args[@]}" bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "xclip -in -selection clipboard"
     fi
+    # F9 / F10 pause and resume the :watch observer (nothing is read or
+    # sent while paused). Safe on this dedicated server only.
+    tmux "${sock_args[@]}" bind-key -n F9 set-option @ts_watch_paused 1 \; display-message "watch: paused"
+    tmux "${sock_args[@]}" bind-key -n F10 set-option @ts_watch_paused 0 \; display-message "watch: resumed"
     right_pane="$(tmux "${sock_args[@]}" split-window -h -t "$left_pane" -P -F '#{pane_id}')" || die "could not create the tmux pane."
     tmux "${sock_args[@]}" send-keys -t "$right_pane" "exec ts-brain '$session' '$left_pane' '$engine'" C-m
     exec tmux "${sock_args[@]}" attach -t "$session"
@@ -74,6 +78,7 @@ Usage: terminal-system [claude|codex]
     :fix [on|off]           diagnose the last failed command (on = automatic)
     :follow <goal>          closed loop: step, check the output, next step
     :watch on|all|off       observer panel that advises on errors
+    :watch pause|resume     stop/restart reading the left panel (F9 / F10)
     :engine claude|codex    switch AI engine during the session
     :quit                   close the session
 
