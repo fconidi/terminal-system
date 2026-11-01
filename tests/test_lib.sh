@@ -288,4 +288,43 @@ run '
     done
 '
 
+run '
+    . "'"$LIB"'"
+    ts_rc_is_failure "apt install x" 100 && echo "ok - rc 100 is a failure" || echo "FAIL - rc 100 should be a failure"
+    ts_rc_is_failure "ls" 0 && echo "FAIL - rc 0 is not a failure" || echo "ok - rc 0 is not a failure"
+    ts_rc_is_failure "sleep 9" 130 && echo "FAIL - Ctrl-C is not a failure" || echo "ok - rc 130 (Ctrl-C) is not a failure"
+    ts_rc_is_failure "grep x f" 1 && echo "FAIL - grep no-match is not a failure" || echo "ok - grep rc 1 is not a failure"
+    ts_rc_is_failure "grep x f" 2 && echo "ok - grep rc 2 is a failure" || echo "FAIL - grep rc 2 should be a failure"
+    ts_rc_is_failure "make" 1 && echo "ok - make rc 1 is a failure" || echo "FAIL - make rc 1 should be a failure"
+    ts_rc_is_failure "ls" "" && echo "FAIL - empty rc is not a failure" || echo "ok - empty rc is not a failure"
+'
+
+run '
+    . "'"$LIB"'"
+    v="$(ts_rc_var "ts-done-12-3456")"
+    [ "$v" = "TS_RC_ts_done_12_3456" ] && echo "ok - rc var name is a valid identifier" || echo "FAIL - rc var name (got: $v)"
+    sfx="$(ts_signal_suffix "ts-done-1-2")"
+    [[ "$sfx" == *"set-environment -g TS_RC_ts_done_1_2 \"\$?\""* && "$sfx" == *"wait-for -S ts-done-1-2"* ]] && echo "ok - signal suffix records \$? before signalling" || echo "FAIL - signal suffix (got: $sfx)"
+    sfx="$(ts_signal_suffix "ts-done-1-2" 0)"
+    [[ "$sfx" != *set-environment* ]] && echo "ok - signal suffix without rc has no set-environment" || echo "FAIL - suffix without rc (got: $sfx)"
+'
+
+run '
+    . "'"$LIB"'"
+    ts_parse_fix $'"'"'# package is not installed\n# try the package manager\napt install foo'"'"'; rc=$?; out="$TS_FIX_COMMANDS"
+    [ "$rc" -eq 0 ] && [ "$out" = "apt install foo" ] && echo "ok - parse_fix returns the fix command" || echo "FAIL - parse_fix command (rc=$rc got: $out)"
+    ts_parse_fix $'"'"'# package is not installed\napt install foo'"'"' > /dev/null
+    [[ "$TS_FIX_EXPLANATION" == *"package is not installed"* ]] && echo "ok - parse_fix keeps the explanation" || echo "FAIL - parse_fix explanation (got: $TS_FIX_EXPLANATION)"
+    ts_parse_fix $'"'"'# cannot tell the cause'"'"'; rc=$?; out="$TS_FIX_COMMANDS"
+    [ "$rc" -eq 0 ] && [ -z "$out" ] && echo "ok - parse_fix with explanation only gives no command" || echo "FAIL - parse_fix explanation-only (rc=$rc got: $out)"
+'
+
+run '
+    . "'"$LIB"'"
+    unset TS_TARGET
+    p="$(ts_build_prompt "list files")"
+    [[ "$p" == *"Environment:"* && "$p" == *"- user:"* && "$p" == *"Current instruction: list files"* ]] && echo "ok - prompt carries the environment block" || echo "FAIL - prompt environment (got: $p)"
+    [[ "$p" != *"output:"* ]] && echo "ok - environment block contains no pane output" || echo "FAIL - env block leaks output"
+'
+
 exit $FAIL

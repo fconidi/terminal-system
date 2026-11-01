@@ -20,12 +20,16 @@ TS_ENGINE="${3:?ts-brain: missing engine}"
 TS_OPERATOR="${TMUX_PANE:-}"
 TS_AUTO=0
 TS_CONTEXT_ENABLED=0
+TS_FIX_AUTO=0
+TS_LAST_FAIL_CMD=""
+TS_LAST_FAIL_RC=""
+TS_LAST_FAIL_OUT=""
 force_manual=0
 
 TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: no AI engine found (claude, codex)."; exit 1; }
 
 echo "terminal-system -- engine: $TS_ENGINE (auto: off, context: off)"
-echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :engine claude|codex, :quit"
+echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :fix [on|off], :engine claude|codex, :quit"
 
 ts_other_engine() {
     case "$1" in
@@ -33,6 +37,101 @@ ts_other_engine() {
         codex) echo claude ;;
         *) return 1 ;;
     esac
+}
+
+# Called after a command finished. Reports its exit status; on a real
+# failure, remembers it for :fix (in memory only, redacted) and, if
+# :fix on, diagnoses it right away.
+ts_report_result() {
+    local cmd="$1" signal="$2" rc
+    rc="$(ts_read_rc "$signal")" || rc=""
+    if [ -n "$rc" ] && ts_rc_is_failure "$cmd" "$rc"; then
+        echo "-> ran: $cmd (exit $rc)"
+        TS_LAST_FAIL_CMD="$cmd"
+        TS_LAST_FAIL_RC="$rc"
+        sleep 0.2
+        TS_LAST_FAIL_OUT="$(ts_capture_pane_tail "$TS_TARGET" 30 | ts_redact_secrets)"
+        if [ "$TS_FIX_AUTO" -eq 1 ]; then
+            ts_fix
+        else
+            echo "   failed -- type :fix to diagnose it"
+        fi
+    else
+        echo "-> ran: $cmd"
+    fi
+}
+
+# Executes newline-separated commands in the left panel, one at a time.
+# $2=1 forces confirmation for every command (auto-mode ignored).
+# Fills the global array "executed".
+ts_execute_commands() {
+    local parsed="$1" manual="$2" cmd signal cmd_lines=()
+    executed=()
+    mapfile -t cmd_lines <<< "$parsed"
+    for cmd in "${cmd_lines[@]}"; do
+        [ -z "$cmd" ] && continue
+        if ! ts_pane_alive "$TS_TARGET"; then
+            echo "left panel unavailable; closing the session."
+            tmux kill-session -t "$TS_SESSION" 2> /dev/null
+            exit 0
+        fi
+        signal="ts-done-$$-${RANDOM}${RANDOM}"
+        if [ "$TS_AUTO" -eq 1 ] && [ "$manual" -eq 0 ] && ts_is_safe_readonly_command "$cmd" && ! ts_is_dangerous_command "$cmd"; then
+            # ts_auto_send types cmd itself (combined with the marker) --
+            # no separate pre-type here, unlike the confirm branch below.
+            ts_auto_send "$TS_TARGET" 0.3 "$cmd" "$TS_OPERATOR" "$signal"
+            if ts_wait_for_signal "$signal" 120; then
+                ts_report_result "$cmd" "$signal"
+                executed+=("$cmd")
+            else
+                # Signal never fired (e.g. stuck at a password prompt the
+                # user hasn't answered yet). Typing the next queued command
+                # now would land on that still-busy input line with no
+                # separator, silently gluing two commands into one garbled
+                # line. Stop the batch instead; remaining lines are lost.
+                echo "-> still running after 120s; stopping here so later commands aren't typed over it. Check the left panel, then re-issue the rest."
+                break
+            fi
+        else
+            ts_type_into_pane "$TS_TARGET" "$cmd"
+            if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR" "$signal"; then
+                if ts_wait_for_signal "$signal" 120; then
+                    ts_report_result "${TS_CONFIRMED_COMMAND:-$cmd}" "$signal"
+                    executed+=("${TS_CONFIRMED_COMMAND:-$cmd}")
+                else
+                    echo "-> still running after 120s; stopping here so later commands aren't typed over it. Check the left panel, then re-issue the rest."
+                    break
+                fi
+            else
+                echo "-> cancelled: $cmd"
+            fi
+        fi
+    done
+}
+
+# Asks the engine why TS_LAST_FAIL_CMD failed. The explanation is printed;
+# any fix command always goes through the confirm step (never auto-run,
+# even in auto-mode).
+ts_fix() {
+    local raw prc
+    if [ -z "$TS_LAST_FAIL_CMD" ]; then
+        echo "nothing to fix: no failed command recorded."
+        return 0
+    fi
+    echo "diagnosing: $TS_LAST_FAIL_CMD (exit $TS_LAST_FAIL_RC)"
+    if ! raw="$(ts_call_engine "$TS_ENGINE" "$(ts_build_fix_prompt "$TS_LAST_FAIL_CMD" "$TS_LAST_FAIL_RC" "$TS_LAST_FAIL_OUT")" "$TS_FIX_SYSTEM_PROMPT")"; then
+        echo "error: $TS_ENGINE did not respond; try :fix again or :engine."
+        return 0
+    fi
+    TS_LAST_FAIL_CMD=""
+    ts_parse_fix "$raw"; prc=$?
+    [ -n "${TS_FIX_EXPLANATION//[[:space:]]/}" ] && printf 'cause: %s\n' "$TS_FIX_EXPLANATION"
+    if [ "$prc" -eq 2 ]; then
+        echo "no usable fix command in the reply."
+        return 0
+    fi
+    [ -z "$TS_FIX_COMMANDS" ] && return 0
+    ts_execute_commands "$TS_FIX_COMMANDS" 1
 }
 
 ts_run_manual_command() {
@@ -50,7 +149,7 @@ ts_run_manual_command() {
     signal="ts-done-$$-${RANDOM}${RANDOM}"
     if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR" "$signal"; then
         ts_wait_for_signal "$signal" 120 || echo "(still running after 120s, continuing anyway)"
-        echo "-> ran: ${TS_CONFIRMED_COMMAND:-$cmd}"
+        ts_report_result "${TS_CONFIRMED_COMMAND:-$cmd}" "$signal"
         sleep 0.2
         output="$(ts_capture_pane_tail "$TS_TARGET" 20)"
         ts_history_append "manual command" "${TS_CONFIRMED_COMMAND:-$cmd}" "$output"
@@ -104,6 +203,9 @@ while true; do
             echo "context: cleared"
             continue
             ;;
+        ":fix on") TS_FIX_AUTO=1; echo "fix: on -- a failed command's exit status and last 30 output lines (redacted) are sent to the AI engine automatically; fixes still ask for confirmation"; continue ;;
+        ":fix off") TS_FIX_AUTO=0; echo "fix: off"; continue ;;
+        ":fix") ts_fix; continue ;;
         :cmd)
             echo "usage: :cmd <shell command>"
             continue
@@ -162,47 +264,7 @@ while true; do
         parsed="$raw"
     fi
 
-    executed=()
-    mapfile -t cmd_lines <<< "$parsed"
-    for cmd in "${cmd_lines[@]}"; do
-        [ -z "$cmd" ] && continue
-        if ! ts_pane_alive "$TS_TARGET"; then
-            echo "left panel unavailable; closing the session."
-            tmux kill-session -t "$TS_SESSION" 2> /dev/null
-            exit 0
-        fi
-        signal="ts-done-$$-${RANDOM}${RANDOM}"
-        if [ "$TS_AUTO" -eq 1 ] && [ "$force_manual" -eq 0 ] && ts_is_safe_readonly_command "$cmd" && ! ts_is_dangerous_command "$cmd"; then
-            # ts_auto_send types cmd itself (combined with the marker) --
-            # no separate pre-type here, unlike the confirm branch below.
-            ts_auto_send "$TS_TARGET" 0.3 "$cmd" "$TS_OPERATOR" "$signal"
-            if ts_wait_for_signal "$signal" 120; then
-                echo "-> ran: $cmd"
-                executed+=("$cmd")
-            else
-                # Signal never fired (e.g. stuck at a password prompt the
-                # user hasn't answered yet). Typing the next queued command
-                # now would land on that still-busy input line with no
-                # separator, silently gluing two commands into one garbled
-                # line. Stop the batch instead; remaining lines are lost.
-                echo "-> still running after 120s; stopping here so later commands aren't typed over it. Check the left panel, then re-issue the rest."
-                break
-            fi
-        else
-            ts_type_into_pane "$TS_TARGET" "$cmd"
-            if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR" "$signal"; then
-                if ts_wait_for_signal "$signal" 120; then
-                    echo "-> ran: ${TS_CONFIRMED_COMMAND:-$cmd}"
-                    executed+=("${TS_CONFIRMED_COMMAND:-$cmd}")
-                else
-                    echo "-> still running after 120s; stopping here so later commands aren't typed over it. Check the left panel, then re-issue the rest."
-                    break
-                fi
-            else
-                echo "-> cancelled: $cmd"
-            fi
-        fi
-    done
+    ts_execute_commands "$parsed" "$force_manual"
 
     sleep 0.2
     output="$(ts_capture_pane_tail "$TS_TARGET" 20)"

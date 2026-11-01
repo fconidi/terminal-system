@@ -342,4 +342,46 @@ rm -f "$context_log"
 unset TS_STUB_ARG_LOG
 tmux -S "$SOCK" set-environment -gu TS_STUB_ARG_LOG 2>/dev/null
 
+# --- Scenario 10: exit status reported; :fix diagnoses and always confirms ---
+fix_log="$(mktemp)"
+export TS_STUB_ARG_LOG="$fix_log"
+tmux -S "$SOCK" set-environment -g TS_STUB_ARG_LOG "$TS_STUB_ARG_LOG" 2>/dev/null
+fix_resp="$(mktemp)"
+printf 'ls /nonexistent-ts-fix-dir\n' > "$fix_resp"
+export TS_STUB_RESPONSE_FILE="$fix_resp"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE_FILE "$fix_resp" 2>/dev/null
+start_session s10
+tmux -S "$SOCK" send-keys -t s10:0.1 ":auto on" C-m
+sleep 0.2
+tmux -S "$SOCK" send-keys -t s10:0.1 "list a missing dir" C-m
+sleep 1.2
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s10:0.1 -S -20)"
+check "scenario 10: failed command shows its exit status" "$right_out" "(exit 2)"
+check "scenario 10: failed command hints at :fix" "$right_out" "type :fix"
+prompt_arg="$(cat "$fix_log")"
+check "scenario 10: instruction prompt carries the environment block" "$prompt_arg" "Environment:"
+printf '# the directory does not exist\necho fixed-by-ai\n' > "$fix_resp"
+tmux -S "$SOCK" send-keys -t s10:0.1 ":fix" C-m
+sleep 1.2
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s10:0.1 -S -20)"
+check "scenario 10: :fix prints the cause" "$right_out" "cause: the directory does not exist"
+check "scenario 10: fix command asks confirmation even in auto-mode" "$right_out" "[CONFIRM] echo fixed-by-ai"
+prompt_arg="$(cat "$fix_log")"
+check "scenario 10: fix prompt carries exit status" "$prompt_arg" "Exit status: 2"
+tmux -S "$SOCK" send-keys -t s10:0.1 C-m
+sleep 0.6
+out="$(tmux -S "$SOCK" capture-pane -p -t s10:0.0 -S -20)"
+check "scenario 10: confirmed fix executes" "$out" "fixed-by-ai"
+tmux -S "$SOCK" send-keys -t s10:0.1 ":fix" C-m
+sleep 0.3
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s10:0.1 -S -6)"
+check "scenario 10: :fix with nothing recorded says so" "$right_out" "nothing to fix"
+tmux -S "$SOCK" send-keys -t s10:0.1 ":quit" C-m
+sleep 0.2
+rm -f "$fix_log" "$fix_resp"
+unset TS_STUB_RESPONSE_FILE
+tmux -S "$SOCK" set-environment -gu TS_STUB_RESPONSE_FILE 2>/dev/null
+unset TS_STUB_ARG_LOG
+tmux -S "$SOCK" set-environment -gu TS_STUB_ARG_LOG 2>/dev/null
+
 exit $FAIL

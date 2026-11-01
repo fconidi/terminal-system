@@ -42,13 +42,25 @@ typed into the left panel in real time for you to review and confirm.
 - terminal-system runs on its own dedicated tmux server (`tmux -L`),
   separate from any other tmux session you have open, so its
   mouse/copy-paste key bindings don't leak into your other sessions.
+- Every instruction is sent together with a short description of the
+  left panel: distribution, user, working directory, git branch, shell,
+  and the foreground program if it is not a plain shell (e.g. `ssh`).
+  This lets the AI pick the right package manager and paths. It never
+  includes terminal output.
+- After each command, its exit status is shown. When a command fails,
+  `:fix` sends the command, its exit status and the last 30 lines of
+  the left panel (secrets redacted, best effort) to the AI, which
+  prints the likely cause and proposes a fix. The fix always asks for
+  confirmation, even in auto-mode. `:fix on` does this automatically
+  after every failure; it is off by default, so nothing is sent unless
+  you ask.
 - The AI model used for translation can be overridden with
   `TS_CLAUDE_MODEL` / `TS_CODEX_MODEL` (unset by default, which uses
   each CLI's own default model).
 
 Right-panel commands: `:cmd <command>` (run manually, skip the AI),
 `:manual` (prompt for a manual command), `:auto readonly|off`,
-`:context on|off|show|clear`, `:engine claude|codex`, `:quit`. Full
+`:context on|off|show|clear`, `:fix [on|off]`, `:engine claude|codex`, `:quit`. Full
 details in `man/terminal-system.1`.
 
 ## Requirements

@@ -3,6 +3,26 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.2.0] - 2026-11-01
+
+### Added
+- Every instruction now carries a short description of the left panel:
+  distribution, user, working directory, git branch, shell, and the
+  foreground program when it is not a plain shell (for example `ssh`).
+  The model no longer has to guess the package manager or the path. No
+  terminal output is part of it.
+- The exit status of each command is reported (`-> ran: cmd (exit N)`).
+- `:fix` diagnoses the last failed command from its exit status and the
+  last 30 lines of output (secrets redacted, best effort), prints the
+  likely cause and proposes a fix that always asks for confirmation,
+  even in auto-mode. `:fix on` runs it automatically after every
+  failure; default off. Ctrl-C and a plain "no match" from
+  grep/diff/cmp/test are not treated as failures.
+
+### Changed
+- The system prompt no longer assumes Debian/Ubuntu when the
+  environment block says otherwise.
+
 ## [1.1.9] - 2026-09-16
 
 ### Fixed

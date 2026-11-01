@@ -237,7 +237,7 @@ ts_redact_secrets() {
 # frequent glueing before) at the cost of losing the nicely labeled
 # multi-section output -- a deliberate trade for not risking a garbled
 # command reaching a real shell.
-TS_SYSTEM_PROMPT="You translate natural-language instructions into shell commands for Debian/Ubuntu Linux. Reply ONLY with the required shell commands, one per line, with no explanations, no markdown, and no backticks. Each line must be exactly one standalone command. Never use printf/echo purely to print a cosmetic section header or label -- if the instruction asks for several kinds of information, just list the actual commands to gather each one, in order, with no header lines and no chaining ';'/'&&' between them. If more than one command is needed, list them in order, one per line."
+TS_SYSTEM_PROMPT="You translate natural-language instructions into shell commands for Linux (the Environment block in the request describes the actual system; assume Debian/Ubuntu if it is missing). Reply ONLY with the required shell commands, one per line, with no explanations, no markdown, and no backticks. Each line must be exactly one standalone command. Never use printf/echo purely to print a cosmetic section header or label -- if the instruction asks for several kinds of information, just list the actual commands to gather each one, in order, with no header lines and no chaining ';'/'&&' between them. If more than one command is needed, list them in order, one per line."
 
 # No forced default model: measured (2026-09-07, 5+5 interleaved runs) haiku
 # averaging 15.18s vs 10.86s for the CLI's own default on this setup -- the
@@ -247,19 +247,19 @@ TS_CLAUDE_MODEL="${TS_CLAUDE_MODEL:-}"
 TS_CODEX_MODEL="${TS_CODEX_MODEL:-}"
 
 ts_call_engine() {
-    local engine="$1" prompt="$2" bin out rc tmpfile model_args=()
+    local engine="$1" prompt="$2" system_prompt="${3:-$TS_SYSTEM_PROMPT}" bin out rc tmpfile model_args=()
     bin="$(ts_resolve_bin "$engine")" || return 1
 
     case "$engine" in
         claude)
             [ -n "$TS_CLAUDE_MODEL" ] && model_args=(--model "$TS_CLAUDE_MODEL")
-            out="$("$bin" -p --disallowedTools "*" "${model_args[@]}" --system-prompt "$TS_SYSTEM_PROMPT" -- "$prompt" 2> /dev/null)"
+            out="$("$bin" -p --disallowedTools "*" "${model_args[@]}" --system-prompt "$system_prompt" -- "$prompt" 2> /dev/null)"
             rc=$?
             ;;
         codex)
             [ -n "$TS_CODEX_MODEL" ] && model_args=(--model "$TS_CODEX_MODEL")
             tmpfile="$(mktemp)" || return 1
-            "$bin" exec -s read-only --skip-git-repo-check "${model_args[@]}" --output-last-message "$tmpfile" -- "$TS_SYSTEM_PROMPT
+            "$bin" exec -s read-only --skip-git-repo-check "${model_args[@]}" --output-last-message "$tmpfile" -- "$system_prompt
 $prompt" > /dev/null 2>&1
             rc=$?
             out="$(cat "$tmpfile" 2> /dev/null)"
@@ -334,9 +334,94 @@ ts_history_context() {
     done
 }
 
+# Facts about the left panel's environment, sent with every request so the
+# model stops guessing the package manager, the working directory or
+# whether the panel is really a local shell. Deliberately limited to
+# non-secret facts (distro, user, cwd, git branch, foreground program);
+# no pane output is included here -- that stays behind :context on.
+ts_env_context() {
+    local target="${1:-}" distro="" user cwd="" fg="" branch="" shell_name=""
+    if [ -r /etc/os-release ]; then
+        distro="$(. /etc/os-release 2> /dev/null && printf '%s' "${PRETTY_NAME:-}")"
+    fi
+    user="$(id -un 2> /dev/null)"
+    [ "$(id -u 2> /dev/null)" = "0" ] && user="$user (root)"
+    if [ -n "$target" ]; then
+        cwd="$(tmux display-message -p -t "$target" '#{pane_current_path}' 2> /dev/null)"
+        fg="$(tmux display-message -p -t "$target" '#{pane_current_command}' 2> /dev/null)"
+    fi
+    if [ -n "$cwd" ] && [ -d "$cwd" ]; then
+        branch="$(git -C "$cwd" symbolic-ref --short -q HEAD 2> /dev/null)"
+    fi
+    shell_name="${SHELL##*/}"
+    printf 'Environment:\n'
+    [ -n "$distro" ] && printf -- '- system: %s\n' "$distro"
+    [ -n "$user" ] && printf -- '- user: %s\n' "$user"
+    [ -n "$cwd" ] && printf -- '- working directory: %s\n' "$cwd"
+    [ -n "$branch" ] && printf -- '- git branch: %s\n' "$branch"
+    [ -n "$shell_name" ] && printf -- '- shell: %s\n' "$shell_name"
+    case "$fg" in
+        ""|bash|zsh|sh|dash|fish|ksh) ;;
+        *) printf -- '- the left panel is currently running "%s" (it may be a remote or interactive session, not a plain local shell)\n' "$fg" ;;
+    esac
+}
+
+# Exit status that means "this command failed" for diagnosis purposes.
+# 130 is the user's own Ctrl-C; 1 from grep/diff/cmp/test just means
+# "no match" / "differs" / "false", which is an answer, not an error.
+ts_rc_is_failure() {
+    local cmd="$1" rc="$2" first
+    [[ "$rc" =~ ^[0-9]+$ ]] || return 1
+    [ "$rc" -eq 0 ] && return 1
+    [ "$rc" -eq 130 ] && return 1
+    first="${cmd%%[[:space:]]*}"
+    first="${first##*/}"
+    if [ "$rc" -eq 1 ]; then
+        case "$first" in
+            grep|egrep|fgrep|rgrep|zgrep|diff|cmp|test|"[") return 1 ;;
+        esac
+    fi
+    return 0
+}
+
+TS_FIX_SYSTEM_PROMPT="A shell command typed into a Linux terminal failed. Using the Environment block, the command, its exit status and the last lines of terminal output, reply with: (1) one or two lines starting with '# ' that state the most likely cause in plain words, then (2) only if a fix exists, the shell command(s) that fix it, one standalone command per line, no markdown, no backticks, no chaining with ';' or '&&'. If you cannot tell the cause, say so in the '# ' line and give no command. Never repeat the failed command unchanged."
+
+ts_build_fix_prompt() {
+    local cmd="$1" rc="$2" output="$3" env
+    env="$(ts_env_context "${TS_TARGET:-}")"
+    [ -n "$env" ] && printf '%s\n' "$env"
+    printf 'Failed command: %s\nExit status: %s\nLast terminal output:\n%s\n' "$cmd" "$rc" "$output"
+}
+
+# Splits a diagnosis reply into explanation ('# ' lines) and fix commands
+# (everything else, validated by ts_parse_commands). Results go in globals
+# (TS_FIX_EXPLANATION, TS_FIX_COMMANDS) so callers must not run this in a
+# subshell. Returns 0, or 2 if the non-'#' text is not a usable command list.
+TS_FIX_EXPLANATION=""
+TS_FIX_COMMANDS=""
+ts_parse_fix() {
+    local raw="$1" line explain="" body="" prc
+    TS_FIX_COMMANDS=""
+    while IFS= read -r line; do
+        case "$line" in
+            "# "*|"#") explain+="${line#\#}"$'\n' ;;
+            *) body+="$line"$'\n' ;;
+        esac
+    done <<< "$raw"
+    TS_FIX_EXPLANATION="$(sed -E 's/^[[:space:]]+//' <<< "$explain")"
+    if [ -z "${body//[[:space:]]/}" ]; then
+        return 0
+    fi
+    TS_FIX_COMMANDS="$(ts_parse_commands "$body")"; prc=$?
+    [ "$prc" -eq 0 ] || TS_FIX_COMMANDS=""
+    return "$prc"
+}
+
 ts_build_prompt() {
-    local instruction="$1" ctx
+    local instruction="$1" ctx env
     ctx="$(ts_history_context)"
+    env="$(ts_env_context "${TS_TARGET:-}")"
+    [ -n "$env" ] && printf '%s\n' "$env"
     if [ -n "$ctx" ]; then
         printf 'Previous session context:\n%s\nCurrent instruction: %s\n' "$ctx" "$instruction"
     else
@@ -411,11 +496,41 @@ ts_refocus_after_signal() {
     ) &
 }
 
-ts_append_refocus_signal() {
-    local target="$1" signal="$2" quoted_signal suffix
+# Name of the tmux global variable that carries a command's exit status
+# from the left panel back to ts-brain (signal names contain "-", which is
+# not a valid variable name).
+ts_rc_var() {
+    printf 'TS_RC_%s' "${1//[^A-Za-z0-9]/_}"
+}
+
+# Prints the exit status recorded for $signal and removes the variable.
+# Prints nothing (rc 1) if none was recorded.
+ts_read_rc() {
+    local var out
+    var="$(ts_rc_var "$1")"
+    out="$(tmux show-environment -g "$var" 2> /dev/null)" || return 1
+    tmux set-environment -gu "$var" > /dev/null 2>&1
+    [[ "$out" == "$var="* ]] || return 1
+    printf '%s\n' "${out#"$var="}"
+}
+
+# Shell snippet that stores "$?" (the exit status of the command typed just
+# before it) and then fires the completion signal. "$?" must be read first:
+# any command in between would overwrite it.
+ts_signal_suffix() {
+    local signal="$1" record_rc="${2:-1}" quoted_signal var
     printf -v quoted_signal '%q' "$signal"
-    suffix="; tmux wait-for -S $quoted_signal >/dev/null 2>&1"
-    ts_type_into_pane "$target" "$suffix"
+    if [ "$record_rc" = "1" ]; then
+        var="$(ts_rc_var "$signal")"
+        printf '; tmux set-environment -g %s "$?" >/dev/null 2>&1; tmux wait-for -S %s >/dev/null 2>&1' "$var" "$quoted_signal"
+    else
+        printf '; tmux wait-for -S %s >/dev/null 2>&1' "$quoted_signal"
+    fi
+}
+
+ts_append_refocus_signal() {
+    local target="$1" signal="$2" record_rc="${3:-1}"
+    ts_type_into_pane "$target" "$(ts_signal_suffix "$signal" "$record_rc")"
 }
 
 ts_send_enter() {
@@ -427,7 +542,7 @@ ts_send_enter() {
         if [ -n "$return_target" ] && ts_pane_alive "$return_target"; then
             signal="terminal-system-refocus-$$-$RANDOM"
             ts_refocus_after_signal "$return_target" "$signal"
-            ts_append_refocus_signal "$target" "$signal"
+            ts_append_refocus_signal "$target" "$signal" 0
         fi
         tmux send-keys -t "$target" C-m
         ts_focus_pane "$target"
@@ -490,7 +605,7 @@ ts_wait_for_signal() {
 # glued at production timing, matching that same one-call fix.
 ts_marked_command() {
     local cmd="$1" signal="$2"
-    printf '%s; tmux wait-for -S %s >/dev/null 2>&1' "$cmd" "$(printf '%q' "$signal")"
+    printf '%s%s' "$cmd" "$(ts_signal_suffix "$signal")"
 }
 
 ts_confirm_and_send() {

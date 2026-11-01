@@ -35,11 +35,27 @@ engine as context for follow-up instructions. Default: off. "show"
 prints what is currently stored; "clear" empties it without changing
 the on/off setting.
 .TP
+.B :fix [on|off]
+After every command, its exit status is shown; a failure (other than
+Ctrl-C, or a plain "no match" from grep/diff/test) is remembered.
+.B :fix
+sends that command, its exit status and the last 30 lines of left-panel
+output (secrets redacted, best effort) to the AI engine, prints the
+likely cause and offers a fix command. The fix always asks for
+confirmation, even in auto-mode.
+.B :fix on
+does this automatically after every failure. Default: off.
+.TP
 .B :engine claude|codex
 Switch the AI engine for the rest of the session.
 .TP
 .B :quit
 End the session.
+.SH ENVIRONMENT CONTEXT
+Every instruction is sent with a short description of the left panel:
+distribution name, user, working directory, git branch, shell and, if
+the panel is running something other than a shell (for example ssh),
+that program. No terminal output is included in it.
 .SH SAFETY
 Every generated or manual command waits for manual confirmation by
 default. Press Enter to execute it, "e" to edit it, or "n" to cancel it.
