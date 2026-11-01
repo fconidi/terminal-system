@@ -3,18 +3,40 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [1.6.0] - 2026-11-01
+## [1.2.0] - 2026-11-01
 
 ### Added
-- High-risk commands (rated high by the AI, or matching the built-in
-  dangerous patterns) need a short code typed in the confirmation step;
-  a bare Enter or a wrong code does not run them.
+- Every instruction carries a short description of the left panel:
+  distribution, user, working directory, git branch, shell, and the
+  foreground program when it is not a plain shell (for example `ssh`).
+  The model no longer has to guess the package manager or the path. No
+  terminal output is part of it.
+- The exit status of each command is reported (`-> ran: cmd (exit N)`).
+  `:fix` diagnoses the last failed command from its exit status and the
+  last 30 lines of output (secrets redacted, best effort), prints the
+  likely cause and proposes a fix that always asks for confirmation,
+  even in auto-mode. `:fix on` runs it automatically after every
+  failure; default off. Ctrl-C and a plain "no match" from
+  grep/diff/cmp/test are not treated as failures.
+- `:follow <goal>`: closed loop in which each step's output is fed back
+  to the AI to get the next step. Every step keeps the normal
+  confirmation (or read-only auto-mode); it stops on DONE, a cancelled
+  step, a repeated step, or after 5 steps.
+- `:watch on|all|off|pause|resume`: an observer panel (`ts-watch`) that
+  follows the left panel and prints advice when something goes wrong.
+  It waits for the output to settle, skips full-screen programs, sends
+  only secrets-redacted output, and never types anything. `on` asks the
+  AI only when new output looks like an error; `all` asks after every
+  change. A one-time notice about what is sent to the AI provider must
+  be acknowledged. F9 / F10 (or `pause` / `resume`) stop and restart
+  reading; output produced while paused is never sent.
+- Structured AI replies: every command carries a short explanation and
+  a risk level, shown in the confirmation step. `?` there asks the AI to
+  explain the command. A command rated high, or matching the built-in
+  dangerous patterns, always asks for confirmation, even in auto-mode,
+  and needs a short code typed instead of Enter.
 - `:explain` explains the last command and its output; `:explain
   <command>` explains a command without running it.
-
-## [1.5.0] - 2026-11-01
-
-### Added
 - Prompt detection: a yes/no question, password or passphrase prompt,
   "Continue?" or pager on the left panel's screen moves focus there and
   brings it back afterwards. Before, only the command name decided this.
@@ -22,60 +44,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   tmux message on completion of commands that ran 15 s or more, and
   Ctrl-C to stop waiting. `TS_STATUS_AFTER`, `TS_STATUS_EVERY`,
   `TS_NOTIFY_AFTER`, `TS_MAX_WAIT` adjust the timings.
-- `:watch` shows a one-time notice about what is sent to the AI
-  provider and asks for acknowledgement. `:watch pause` / `:watch
-  resume` and the F9 / F10 keys stop and restart reading; output
-  produced while paused is never sent.
-
-### Changed
-- The 120-second limit that abandoned the rest of a batch is now 30
-  minutes, and only after the status lines above have been shown.
-
-## [1.4.0] - 2026-11-01
-
-### Added
-- Structured AI replies: every command carries a short explanation and
-  a risk level, shown in the confirmation step. `?` there asks the AI to
-  explain the command. A command rated high always asks for
-  confirmation, even in auto-mode.
-
-### Changed
-- Long commands are no longer rejected by the 12-word heuristic when the
-  reply is structured. Plain-text replies (or a system without
-  `python3`) still use the line-per-command parser.
-
-## [1.3.0] - 2026-11-01
-
-### Added
-- `:watch on|all|off`: an observer panel (`ts-watch`) that follows the
-  left panel and prints advice when something goes wrong. It waits for
-  the output to settle, skips full-screen programs, sends only secrets-
-  redacted output, and never types anything. `on` asks the AI only when
-  new output looks like an error; `all` asks after every change.
-- `:follow <goal>`: closed loop in which each step's output is fed back
-  to the AI to get the next step. Every step keeps the normal
-  confirmation (or read-only auto-mode); it stops on DONE, a cancelled
-  step, a repeated step, or after 5 steps.
-
-## [1.2.0] - 2026-11-01
-
-### Added
-- Every instruction now carries a short description of the left panel:
-  distribution, user, working directory, git branch, shell, and the
-  foreground program when it is not a plain shell (for example `ssh`).
-  The model no longer has to guess the package manager or the path. No
-  terminal output is part of it.
-- The exit status of each command is reported (`-> ran: cmd (exit N)`).
-- `:fix` diagnoses the last failed command from its exit status and the
-  last 30 lines of output (secrets redacted, best effort), prints the
-  likely cause and proposes a fix that always asks for confirmation,
-  even in auto-mode. `:fix on` runs it automatically after every
-  failure; default off. Ctrl-C and a plain "no match" from
-  grep/diff/cmp/test are not treated as failures.
 
 ### Changed
 - The system prompt no longer assumes Debian/Ubuntu when the
   environment block says otherwise.
+- Long commands are no longer rejected by the 12-word heuristic when the
+  reply is structured. Plain-text replies (or a system without
+  `python3`) still use the line-per-command parser.
+- The 120-second limit that abandoned the rest of a batch is now 30
+  minutes, and only after the status lines above have been shown.
 
 ## [1.1.9] - 2026-09-16
 
