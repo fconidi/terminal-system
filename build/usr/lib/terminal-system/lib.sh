@@ -662,3 +662,80 @@ ts_auto_send() {
     sleep "$delay"
     ts_send_enter "$target" "$cmd" "$return_target"
 }
+
+# ---- :follow (closed loop) -------------------------------------------------
+
+TS_FOLLOW_MAX="${TS_FOLLOW_MAX:-5}"
+
+TS_FOLLOW_SYSTEM_PROMPT="You work toward a goal in a Linux terminal, one step at a time. You are given the Environment, the goal, and the steps already done with the terminal output they produced. Reply with EITHER the next shell command(s), one standalone command per line, no markdown, no backticks, no chaining with ';' or '&&', OR, when the goal is reached or cannot be reached, the single word DONE on the first line followed by one or two lines starting with '# ' that summarize the result or the blocker. Prefer one command per step so its output can be checked. Never repeat a command that already ran with the same result."
+
+# $1 goal, $2 steps log (may be empty)
+ts_build_follow_prompt() {
+    local goal="$1" steps="$2" env
+    env="$(ts_env_context "${TS_TARGET:-}")"
+    [ -n "$env" ] && printf '%s\n' "$env"
+    printf 'Goal: %s\n' "$goal"
+    if [ -n "$steps" ]; then
+        printf 'Steps done so far:\n%s\n' "$steps"
+    else
+        printf 'No steps done yet.\n'
+    fi
+}
+
+# Parses a :follow reply. Sets TS_FOLLOW_DONE (0/1), TS_FOLLOW_SUMMARY and
+# TS_FOLLOW_COMMANDS. Returns 2 when the reply is neither DONE nor a usable
+# command list. Not for use in a subshell.
+TS_FOLLOW_DONE=0
+TS_FOLLOW_SUMMARY=""
+TS_FOLLOW_COMMANDS=""
+ts_parse_follow() {
+    local raw="$1" first prc
+    TS_FOLLOW_DONE=0; TS_FOLLOW_SUMMARY=""; TS_FOLLOW_COMMANDS=""
+    first="$(grep -m1 -v '^[[:space:]]*$' <<< "$raw")"
+    first="${first//[[:space:]]/}"
+    if [ "$first" = "DONE" ]; then
+        TS_FOLLOW_DONE=1
+        TS_FOLLOW_SUMMARY="$(grep -E '^[[:space:]]*#' <<< "$raw" | sed -E 's/^[[:space:]]*#[[:space:]]?//')"
+        return 0
+    fi
+    TS_FOLLOW_COMMANDS="$(ts_parse_commands "$raw")"; prc=$?
+    [ "$prc" -eq 0 ] || TS_FOLLOW_COMMANDS=""
+    return "$prc"
+}
+
+# ---- :watch (passive observer) ---------------------------------------------
+
+TS_WATCH_QUIET="${TS_WATCH_QUIET:-2}"
+TS_WATCH_MAX_WAIT="${TS_WATCH_MAX_WAIT:-5}"
+TS_WATCH_MIN_INTERVAL="${TS_WATCH_MIN_INTERVAL:-10}"
+
+TS_WATCH_SYSTEM_PROMPT="You watch the output of a Linux terminal and help the person using it in real time. You never run anything. You are given the Environment and the latest terminal output. If something went wrong (an error, a failed command, a warning that matters), say in one or two short lines what happened and, if there is a fix, give the exact command on its own line starting with '\$ '. If the output is routine and nothing needs attention, reply with exactly the single word OK. Reply in the language named in the Environment block. No markdown, no backticks."
+
+# Reads stdin; succeeds if the text looks like a problem worth an AI call.
+ts_looks_like_problem() {
+    grep -Eiq \
+        -e 'command not found' -e 'permission denied' -e 'no such file or directory' \
+        -e 'not permitted' -e 'cannot (open|access|find|stat|create|remove|execute)' \
+        -e 'unable to' -e 'could not' -e "couldn't" -e 'failed' -e 'failure' \
+        -e '(^|[^a-z])error([^a-z]|$)' -e 'fatal' -e 'traceback' -e 'segmentation fault' \
+        -e 'no space left' -e 'connection (refused|timed out|reset)' -e 'timed out' \
+        -e 'unknown (command|option)' -e 'invalid (option|argument|syntax)' -e 'syntax error' \
+        -e 'denied' -e 'unreachable' -e 'not found' -e 'broken' -e 'unmet dependencies' \
+        -e '^E: ' -e 'exit(ed)? (status|code) [1-9]'
+}
+
+# $1 old snapshot file, $2 new snapshot file: prints the lines of $2 that
+# are not in $1 (order kept).
+ts_new_lines() {
+    diff --old-line-format='' --unchanged-line-format='' --new-line-format='%L' "$1" "$2" 2> /dev/null
+    return 0
+}
+
+# $1 target pane, $2 lines: redacted tail of the pane, 32 KiB at most.
+ts_watch_snapshot() {
+    tmux capture-pane -p -t "$1" -S "-${2:-120}" 2> /dev/null | ts_redact_secrets | tail -c 32768
+}
+
+ts_pane_in_alt_screen() {
+    [ "$(tmux display-message -p -t "$1" '#{alternate_on}' 2> /dev/null)" = "1" ]
+}

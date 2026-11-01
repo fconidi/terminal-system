@@ -54,13 +54,24 @@ typed into the left panel in real time for you to review and confirm.
   confirmation, even in auto-mode. `:fix on` does this automatically
   after every failure; it is off by default, so nothing is sent unless
   you ask.
+- `:follow <goal>` runs a closed loop: the AI proposes a step, it runs
+  in the left panel as usual (confirmation, or the read-only auto-mode),
+  the output (secrets redacted) goes back to the AI and the next step is
+  proposed. It stops on `DONE`, when you cancel a step, when the same
+  step comes back twice, or after 5 steps.
+- `:watch on` opens a small observer panel under the instruction panel.
+  When the left panel's output settles (2 s quiet, at most one request
+  every 10 s) and looks like an error, the recent output (secrets
+  redacted) is sent to the AI and the advice is printed there. It never
+  types anything. `:watch all` asks after every change instead of only
+  on errors; `:watch off` closes it. Off by default.
 - The AI model used for translation can be overridden with
   `TS_CLAUDE_MODEL` / `TS_CODEX_MODEL` (unset by default, which uses
   each CLI's own default model).
 
 Right-panel commands: `:cmd <command>` (run manually, skip the AI),
 `:manual` (prompt for a manual command), `:auto readonly|off`,
-`:context on|off|show|clear`, `:fix [on|off]`, `:engine claude|codex`, `:quit`. Full
+`:context on|off|show|clear`, `:fix [on|off]`, `:follow <goal>`, `:watch on|all|off`, `:engine claude|codex`, `:quit`. Full
 details in `man/terminal-system.1`.
 
 ## Requirements
@@ -96,6 +107,7 @@ sudo apt update && sudo apt install terminal-system
 ```bash
 sudo install -Dm755 build/usr/bin/terminal-system /usr/local/bin/terminal-system
 sudo install -Dm755 build/usr/bin/ts-brain /usr/local/bin/ts-brain
+sudo install -Dm755 build/usr/bin/ts-watch /usr/local/bin/ts-watch
 sudo install -Dm644 build/usr/lib/terminal-system/lib.sh /usr/local/lib/terminal-system/lib.sh
 ```
 

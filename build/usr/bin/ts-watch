@@ -1,0 +1,78 @@
+#!/bin/bash
+# terminal-system/build/usr/bin/ts-watch
+# Passive observer for terminal-system. Runs in its own small panel (opened
+# by ":watch on" in ts-brain), reads the left panel and prints advice when
+# something goes wrong. It never types into any panel.
+# Usage: ts-watch <left-pane-target> <engine> <errors|all>
+set -uo pipefail
+
+SCRIPT_LIBDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib/terminal-system" && pwd)"
+if [ -f "$SCRIPT_LIBDIR/lib.sh" ]; then
+    LIBDIR="$SCRIPT_LIBDIR"
+else
+    LIBDIR="/usr/lib/terminal-system"
+fi
+# shellcheck source=/usr/lib/terminal-system/lib.sh
+. "$LIBDIR/lib.sh"
+
+TS_TARGET="${1:?ts-watch: missing target pane}"
+TS_ENGINE="${2:?ts-watch: missing engine}"
+MODE="${3:-errors}"
+TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-watch: no AI engine found."; exit 1; }
+
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+: > "$WORK/analyzed"
+: > "$WORK/current"
+
+echo "watching the left panel (mode: $MODE, engine: $TS_ENGINE)."
+echo "Its recent output (secrets redacted) is sent to the AI engine. Close this panel or use :watch off to stop."
+
+lang="${TS_WATCH_LANGUAGE:-${LANG:-en}}"
+last_hash=""
+changed_at=0
+first_change=0
+last_request=0
+pending=0
+
+while true; do
+    sleep 1
+    ts_pane_alive "$TS_TARGET" || exit 0
+    now=$(date +%s)
+    ts_watch_snapshot "$TS_TARGET" 120 > "$WORK/current"
+    hash="$(md5sum < "$WORK/current")"
+    if [ "$hash" != "$last_hash" ]; then
+        last_hash="$hash"
+        changed_at=$now
+        [ "$pending" -eq 0 ] && first_change=$now
+        pending=1
+    fi
+    [ "$pending" -eq 1 ] || continue
+    # wait for output to settle (quiet period), but never longer than the max
+    if [ $((now - changed_at)) -lt "$TS_WATCH_QUIET" ] && [ $((now - first_change)) -lt "$TS_WATCH_MAX_WAIT" ]; then
+        continue
+    fi
+    [ $((now - last_request)) -ge "$TS_WATCH_MIN_INTERVAL" ] || continue
+    # full-screen programs (vim, top, less) are not worth analysing
+    if ts_pane_in_alt_screen "$TS_TARGET"; then
+        continue
+    fi
+    pending=0
+    ts_new_lines "$WORK/analyzed" "$WORK/current" > "$WORK/new"
+    cp "$WORK/current" "$WORK/analyzed"
+    [ -s "$WORK/new" ] || continue
+    if [ "$MODE" = "errors" ] && ! ts_looks_like_problem < "$WORK/new"; then
+        continue
+    fi
+    last_request=$(date +%s)
+    prompt="$(ts_env_context "$TS_TARGET")
+- language: $lang
+Latest terminal output:
+$(cat "$WORK/current")"
+    if ! reply="$(ts_call_engine "$TS_ENGINE" "$prompt" "$TS_WATCH_SYSTEM_PROMPT")"; then
+        echo "[$(date +%H:%M:%S)] AI engine did not respond; watching stopped. Run :watch on again to restart."
+        exit 1
+    fi
+    [ "$(tr -d '[:space:]' <<< "$reply")" = "OK" ] && continue
+    printf '\n[%s]\n%s\n' "$(date +%H:%M:%S)" "$reply"
+done

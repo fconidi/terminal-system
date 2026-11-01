@@ -3,6 +3,19 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.3.0] - 2026-11-01
+
+### Added
+- `:watch on|all|off`: an observer panel (`ts-watch`) that follows the
+  left panel and prints advice when something goes wrong. It waits for
+  the output to settle, skips full-screen programs, sends only secrets-
+  redacted output, and never types anything. `on` asks the AI only when
+  new output looks like an error; `all` asks after every change.
+- `:follow <goal>`: closed loop in which each step's output is fed back
+  to the AI to get the next step. Every step keeps the normal
+  confirmation (or read-only auto-mode); it stops on DONE, a cancelled
+  step, a repeated step, or after 5 steps.
+
 ## [1.2.0] - 2026-11-01
 
 ### Added

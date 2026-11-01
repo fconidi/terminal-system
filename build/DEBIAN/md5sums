@@ -1,10 +1,11 @@
 a5a69dba6d52aeeb45cc34c80383c321  etc/xdg/menus/applications-merged/terminal-system.menu
-b20f138a19bfe70e80c03fcb1695ad94  usr/bin/terminal-system
-1121bc651296aee11ebd7ccefb41338b  usr/bin/ts-brain
-b51d8f34ab83098931bd03faec45554a  usr/lib/terminal-system/lib.sh
+80abcfd8c67fb98b29a2e87a711491d4  usr/bin/terminal-system
+3e11433d11d800d6ea589b8500044a72  usr/bin/ts-brain
+228d114612aabbfa0b715810de3581af  usr/bin/ts-watch
+189d362aec8d8529f3d5fc06737493f5  usr/lib/terminal-system/lib.sh
 1f3fd25ff5c0706fac6ee243e3d0f0ea  usr/share/applications/terminal-system.desktop
 a4ec97cf928a9ee95cc5f6636a995d60  usr/share/doc/terminal-system/README
 77dbe2560724ffad26ff1b1376645803  usr/share/icons/hicolor/128x128/apps/terminal-system.png
 4466cc7138cd91c746d6f4e0afd5ab95  usr/share/icons/hicolor/256x256/apps/terminal-system.png
 4d4d3a124079f03d795e080c88588030  usr/share/icons/hicolor/48x48/apps/terminal-system.png
-47bc2250c0d63ff4b0f4c32ae1d82d6e  usr/share/man/man1/terminal-system.1.gz
+b495daf58c02477651d1af6e9b9ddf17  usr/share/man/man1/terminal-system.1.gz

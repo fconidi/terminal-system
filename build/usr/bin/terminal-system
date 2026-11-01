@@ -4,7 +4,7 @@
 # instructions, left panel receives the generated shell commands.
 set -uo pipefail
 
-VERSION="1.2.0"
+VERSION="1.3.0"
 SCRIPT_LIBDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib/terminal-system" && pwd)"
 if [ -f "$SCRIPT_LIBDIR/lib.sh" ]; then
     LIBDIR="$SCRIPT_LIBDIR"
@@ -72,6 +72,8 @@ Usage: terminal-system [claude|codex]
     :auto readonly|off      toggle automatic execution (read-only allowlist)
     :context on|off|show|clear   opt-in AI context from left-panel output
     :fix [on|off]           diagnose the last failed command (on = automatic)
+    :follow <goal>          closed loop: step, check the output, next step
+    :watch on|all|off       observer panel that advises on errors
     :engine claude|codex    switch AI engine during the session
     :quit                   close the session
 

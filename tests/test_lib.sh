@@ -327,4 +327,34 @@ run '
     [[ "$p" != *"output:"* ]] && echo "ok - environment block contains no pane output" || echo "FAIL - env block leaks output"
 '
 
+run '
+    . "'"$LIB"'"
+    ts_parse_follow $'"'"'DONE\n# all set\n# nothing else'"'"'; rc=$?
+    [ "$rc" -eq 0 ] && [ "$TS_FOLLOW_DONE" -eq 1 ] && [[ "$TS_FOLLOW_SUMMARY" == *"all set"* ]] && echo "ok - parse_follow recognises DONE with summary" || echo "FAIL - parse_follow DONE (rc=$rc done=$TS_FOLLOW_DONE sum=$TS_FOLLOW_SUMMARY)"
+    ts_parse_follow $'"'"'df -h\nfree -h'"'"'; rc=$?
+    [ "$rc" -eq 0 ] && [ "$TS_FOLLOW_DONE" -eq 0 ] && [ "$TS_FOLLOW_COMMANDS" = $'"'"'df -h\nfree -h'"'"' ] && echo "ok - parse_follow returns next commands" || echo "FAIL - parse_follow commands (rc=$rc got: $TS_FOLLOW_COMMANDS)"
+    ts_parse_follow "this is a long sentence that is clearly an explanation and not a command at all really"; rc=$?
+    [ "$rc" -eq 2 ] && echo "ok - parse_follow flags prose as unclear" || echo "FAIL - parse_follow prose (rc=$rc)"
+    p="$(ts_build_follow_prompt "install foo" "step 1: apt update")"
+    [[ "$p" == *"Goal: install foo"* && "$p" == *"step 1: apt update"* ]] && echo "ok - follow prompt carries goal and steps" || echo "FAIL - follow prompt (got: $p)"
+'
+
+run '
+    . "'"$LIB"'"
+    for t in "bash: foo: command not found" "cp: cannot open x: Permission denied" "E: Unable to locate package zzz" "Connection refused" "make: *** [all] Error 2" "Traceback (most recent call last):"; do
+        ts_looks_like_problem <<< "$t" && echo "ok - problem detected: $t" || echo "FAIL - problem not detected: $t"
+    done
+    for t in "total 12" "drwxr-xr-x 2 root root 4096 Oct  1 file" "Reading package lists... Done" "root@host:~# ls"; do
+        ts_looks_like_problem <<< "$t" && echo "FAIL - false alarm: $t" || echo "ok - routine output ignored: $t"
+    done
+'
+
+run '
+    . "'"$LIB"'"
+    d="$(mktemp -d)"; printf "a\nb\nc\n" > "$d/old"; printf "b\nc\nd\ne\n" > "$d/new"
+    got="$(ts_new_lines "$d/old" "$d/new" | tr "\n" " ")"
+    [ "$got" = "d e " ] && echo "ok - new_lines keeps only added lines" || echo "FAIL - new_lines (got: $got)"
+    rm -rf "$d"
+'
+
 exit $FAIL

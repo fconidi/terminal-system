@@ -18,9 +18,12 @@ TS_SESSION="${1:?ts-brain: missing tmux session name}"
 TS_TARGET="${2:?ts-brain: missing target pane}"
 TS_ENGINE="${3:?ts-brain: missing engine}"
 TS_OPERATOR="${TMUX_PANE:-}"
+TS_WATCH_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ts-watch"
 TS_AUTO=0
 TS_CONTEXT_ENABLED=0
 TS_FIX_AUTO=0
+TS_WATCH_PANE=""
+TS_RESULTS=()
 TS_LAST_FAIL_CMD=""
 TS_LAST_FAIL_RC=""
 TS_LAST_FAIL_OUT=""
@@ -29,7 +32,7 @@ force_manual=0
 TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: no AI engine found (claude, codex)."; exit 1; }
 
 echo "terminal-system -- engine: $TS_ENGINE (auto: off, context: off)"
-echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :fix [on|off], :engine claude|codex, :quit"
+echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :fix [on|off], :follow <goal>, :watch on|all|off, :engine claude|codex, :quit"
 
 ts_other_engine() {
     case "$1" in
@@ -45,6 +48,11 @@ ts_other_engine() {
 ts_report_result() {
     local cmd="$1" signal="$2" rc
     rc="$(ts_read_rc "$signal")" || rc=""
+    if [ -n "$rc" ] && [ "$rc" != "0" ]; then
+        TS_RESULTS+=("$cmd (exit $rc)")
+    else
+        TS_RESULTS+=("$cmd")
+    fi
     if [ -n "$rc" ] && ts_rc_is_failure "$cmd" "$rc"; then
         echo "-> ran: $cmd (exit $rc)"
         TS_LAST_FAIL_CMD="$cmd"
@@ -134,6 +142,90 @@ ts_fix() {
     ts_execute_commands "$TS_FIX_COMMANDS" 1
 }
 
+# :follow -- closed loop. Runs the model's next step, feeds the (redacted)
+# output back, repeats until the model says DONE, a step is cancelled, the
+# same command comes back twice, or TS_FOLLOW_MAX rounds have run. Every
+# command still goes through the normal confirm / read-only auto path.
+ts_follow() {
+    local goal="$1" round steps="" raw prc out last_cmd="" step
+    if [ -z "$goal" ]; then
+        echo "usage: :follow <goal>"
+        return 0
+    fi
+    echo "following: $goal (up to $TS_FOLLOW_MAX steps; each step's output, redacted, is sent back to the AI engine)"
+    for ((round = 1; round <= TS_FOLLOW_MAX; round++)); do
+        if ! raw="$(ts_call_engine "$TS_ENGINE" "$(ts_build_follow_prompt "$goal" "$steps")" "$TS_FOLLOW_SYSTEM_PROMPT")"; then
+            echo "error: $TS_ENGINE did not respond; stopping."
+            return 0
+        fi
+        ts_parse_follow "$raw"; prc=$?
+        if [ "$prc" -eq 2 ]; then
+            echo "unclear response; stopping:"
+            echo "$raw"
+            return 0
+        fi
+        if [ "$TS_FOLLOW_DONE" -eq 1 ]; then
+            echo "done."
+            [ -n "$TS_FOLLOW_SUMMARY" ] && printf '%s\n' "$TS_FOLLOW_SUMMARY"
+            return 0
+        fi
+        if [ "$TS_FOLLOW_COMMANDS" = "$last_cmd" ]; then
+            echo "the same step came back twice; stopping."
+            return 0
+        fi
+        last_cmd="$TS_FOLLOW_COMMANDS"
+        echo "step $round/$TS_FOLLOW_MAX"
+        TS_RESULTS=()
+        ts_execute_commands "$TS_FOLLOW_COMMANDS" 0
+        if [ "${#executed[@]}" -eq 0 ]; then
+            echo "no step ran; stopping."
+            return 0
+        fi
+        sleep 0.3
+        out="$(ts_capture_pane_tail "$TS_TARGET" 40 | ts_redact_secrets)"
+        step="$(printf '%s\n' "${TS_RESULTS[@]}")"
+        steps+="step ${round}: ${step}
+output:
+${out}
+"
+    done
+    echo "step limit reached ($TS_FOLLOW_MAX); stopping. Run :follow again to continue."
+}
+
+# :watch -- opens/closes the observer panel below this one.
+ts_watch_alive() {
+    [ -n "$TS_WATCH_PANE" ] && ts_pane_alive "$TS_WATCH_PANE"
+}
+
+ts_watch() {
+    local mode="${1//[[:space:]]/}"
+    case "$mode" in
+        off)
+            if ts_watch_alive; then
+                tmux kill-pane -t "$TS_WATCH_PANE" 2> /dev/null
+                echo "watch: off"
+            else
+                echo "watch: already off"
+            fi
+            TS_WATCH_PANE=""
+            ;;
+        on|all)
+            [ "$mode" = "on" ] && mode="errors"
+            if ts_watch_alive; then
+                tmux kill-pane -t "$TS_WATCH_PANE" 2> /dev/null
+            fi
+            if [ ! -x "$TS_WATCH_BIN" ]; then
+                echo "watch: ts-watch not found."
+                return 0
+            fi
+            TS_WATCH_PANE="$(tmux split-window -d -v -l 12 -t "$TS_OPERATOR" -P -F '#{pane_id}' \
+                "PATH='$PATH' exec '$TS_WATCH_BIN' '$TS_TARGET' '$TS_ENGINE' '$mode'")" || { echo "watch: could not open the panel."; TS_WATCH_PANE=""; return 0; }
+            echo "watch: on ($mode) -- the left panel's recent output (secrets redacted) is sent to $TS_ENGINE; advice appears in the panel below, nothing is typed for you"
+            ;;
+        *) echo "usage: :watch on|all|off" ;;
+    esac
+}
+
 ts_run_manual_command() {
     local cmd="$1" output signal
     if [ -z "$cmd" ]; then
@@ -206,6 +298,8 @@ while true; do
         ":fix on") TS_FIX_AUTO=1; echo "fix: on -- a failed command's exit status and last 30 output lines (redacted) are sent to the AI engine automatically; fixes still ask for confirmation"; continue ;;
         ":fix off") TS_FIX_AUTO=0; echo "fix: off"; continue ;;
         ":fix") ts_fix; continue ;;
+        ":watch"|":watch "*) ts_watch "${instruction#:watch}"; continue ;;
+        ":follow"|":follow "*) ts_follow "${instruction#:follow}"; continue ;;
         :cmd)
             echo "usage: :cmd <shell command>"
             continue

@@ -384,4 +384,73 @@ tmux -S "$SOCK" set-environment -gu TS_STUB_RESPONSE_FILE 2>/dev/null
 unset TS_STUB_ARG_LOG
 tmux -S "$SOCK" set-environment -gu TS_STUB_ARG_LOG 2>/dev/null
 
+# --- Scenario 11: :follow runs steps, feeds output back, stops on DONE ---
+seq_dir="$(mktemp -d)"
+printf 'echo step-a\n' > "$seq_dir/1"
+printf 'echo step-b\n' > "$seq_dir/2"
+printf 'DONE\n# goal reached\n' > "$seq_dir/3"
+follow_log="$(mktemp)"
+export TS_STUB_SEQ_DIR="$seq_dir" TS_STUB_ARG_LOG="$follow_log"
+tmux -S "$SOCK" set-environment -g TS_STUB_SEQ_DIR "$seq_dir" 2>/dev/null
+tmux -S "$SOCK" set-environment -g TS_STUB_ARG_LOG "$follow_log" 2>/dev/null
+start_session s11
+tmux -S "$SOCK" send-keys -t s11:0.1 ":auto on" C-m
+sleep 0.2
+tmux -S "$SOCK" send-keys -t s11:0.1 ":follow check things" C-m
+sleep 5
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s11:0.1 -S -30)"
+check "scenario 11: first step announced" "$right_out" "step 1/5"
+check "scenario 11: second step announced" "$right_out" "step 2/5"
+check "scenario 11: stops on DONE with summary" "$right_out" "goal reached"
+out="$(tmux -S "$SOCK" capture-pane -p -t s11:0.0 -S -30)"
+check "scenario 11: step one ran in the left panel" "$out" "step-a"
+check "scenario 11: step two ran in the left panel" "$out" "step-b"
+prompt_arg="$(cat "$follow_log")"
+check "scenario 11: last request carries the earlier output" "$prompt_arg" "step 1: echo step-a"
+tmux -S "$SOCK" send-keys -t s11:0.1 ":quit" C-m
+sleep 0.2
+rm -rf "$seq_dir" "$follow_log"
+unset TS_STUB_SEQ_DIR TS_STUB_ARG_LOG
+tmux -S "$SOCK" set-environment -gu TS_STUB_SEQ_DIR 2>/dev/null
+tmux -S "$SOCK" set-environment -gu TS_STUB_ARG_LOG 2>/dev/null
+
+# --- Scenario 11b: :follow stops when the same step comes back twice ---
+export TS_STUB_RESPONSE="echo same-step"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+start_session s11b
+tmux -S "$SOCK" send-keys -t s11b:0.1 ":auto on" C-m
+sleep 0.2
+tmux -S "$SOCK" send-keys -t s11b:0.1 ":follow loop forever" C-m
+sleep 4
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s11b:0.1 -S -30)"
+check "scenario 11b: repeated step stops the loop" "$right_out" "same step came back twice"
+tmux -S "$SOCK" send-keys -t s11b:0.1 ":quit" C-m
+sleep 0.2
+
+# --- Scenario 12: :watch opens an observer panel that advises on errors ---
+watch_resp="$(mktemp)"
+printf 'The directory is missing.\n$ mkdir /nonexistent-watch-dir\n' > "$watch_resp"
+export TS_STUB_RESPONSE_FILE="$watch_resp"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE_FILE "$watch_resp" 2>/dev/null
+start_session s12
+tmux -S "$SOCK" send-keys -t s12:0.1 ":watch on" C-m
+sleep 1.5
+panes="$(tmux -S "$SOCK" list-panes -t s12 | wc -l)"
+check "scenario 12: :watch on opens a third panel" "$panes" "3"
+tmux -S "$SOCK" send-keys -t s12:0.0 "ls /nonexistent-watch-dir" C-m
+sleep 8
+watch_out="$(tmux -S "$SOCK" capture-pane -p -t s12:0.2 -S -20)"
+check "scenario 12: observer prints advice for an error" "$watch_out" "The directory is missing."
+left_out="$(tmux -S "$SOCK" capture-pane -p -t s12:0.0 -S -20)"
+not_contains "scenario 12: observer never types into the left panel" "$left_out" "mkdir /nonexistent-watch-dir"
+tmux -S "$SOCK" send-keys -t s12:0.1 ":watch off" C-m
+sleep 0.6
+panes="$(tmux -S "$SOCK" list-panes -t s12 | wc -l)"
+check "scenario 12: :watch off closes the panel" "$panes" "2"
+tmux -S "$SOCK" send-keys -t s12:0.1 ":quit" C-m
+sleep 0.2
+rm -f "$watch_resp"
+unset TS_STUB_RESPONSE_FILE
+tmux -S "$SOCK" set-environment -gu TS_STUB_RESPONSE_FILE 2>/dev/null
+
 exit $FAIL

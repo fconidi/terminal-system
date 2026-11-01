@@ -46,6 +46,22 @@ confirmation, even in auto-mode.
 .B :fix on
 does this automatically after every failure. Default: off.
 .TP
+.B :follow \fIgoal\fR
+Closed loop. The AI proposes one step, it runs in the left panel as
+usual (confirmation or read-only auto-mode), the output (secrets
+redacted) is sent back and the next step is proposed. Stops when the AI
+answers DONE, when a step is cancelled, when the same step is proposed
+twice, or after 5 steps.
+.TP
+.B :watch on|all|off
+Open (or close) an observer panel below the instruction panel. It
+watches the left panel: after the output has been quiet for 2 seconds
+(at most 10 seconds between requests) it sends the latest output
+(secrets redacted) to the AI engine and prints advice. It never types
+anything. "on" asks the AI only when new output looks like an error
+(command not found, permission denied, failed, ...); "all" asks after
+every change. Full-screen programs are skipped. Default: off.
+.TP
 .B :engine claude|codex
 Switch the AI engine for the rest of the session.
 .TP

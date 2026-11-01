@@ -13,7 +13,7 @@ MAN_DST="build/usr/share/man/man1/terminal-system.1.gz"
 
 sed -i "s/^VERSION=\".*\"/VERSION=\"$VERSION\"/" build/usr/bin/terminal-system
 
-chmod +x build/usr/bin/terminal-system build/usr/bin/ts-brain
+chmod +x build/usr/bin/terminal-system build/usr/bin/ts-brain build/usr/bin/ts-watch
 chmod +x build/DEBIAN/postinst build/DEBIAN/postrm
 
 mkdir -p build/usr/share/doc/terminal-system build/usr/share/man/man1
@@ -22,7 +22,7 @@ rm -f build/usr/share/man/man1/terminal-system.1
 
 find build -type f ! -path 'build/DEBIAN/*' -exec chmod 644 {} \;
 find build -type d -exec chmod 755 {} \;
-chmod +x build/usr/bin/terminal-system build/usr/bin/ts-brain build/DEBIAN/postinst build/DEBIAN/postrm
+chmod +x build/usr/bin/terminal-system build/usr/bin/ts-brain build/usr/bin/ts-watch build/DEBIAN/postinst build/DEBIAN/postrm
 
 installed_size="$(du -sk build/usr | awk '{print $1}')"
 sed -i "s/^Installed-Size:.*/Installed-Size: $installed_size/" build/DEBIAN/control
