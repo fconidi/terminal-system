@@ -1,6 +1,6 @@
 a5a69dba6d52aeeb45cc34c80383c321  etc/xdg/menus/applications-merged/terminal-system.menu
-82e5eb36e997c7a590852063fa47990a  usr/bin/terminal-system
-71ca21b18a3b943f014919f4ead08f76  usr/bin/ts-brain
+481be397ecdeef7e6631854f313ad70b  usr/bin/terminal-system
+2043a1b53b3de173ae76bb2870d5bcdc  usr/bin/ts-brain
 b697f277459e1ef9c87294b648331dd9  usr/bin/ts-watch
 fd9bd5fcfbf88c7fc7265cae958878e1  usr/lib/terminal-system/lib.sh
 1f3fd25ff5c0706fac6ee243e3d0f0ea  usr/share/applications/terminal-system.desktop

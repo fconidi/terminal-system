@@ -197,15 +197,11 @@ not_contains "scenario 6: dangerous first command was NOT executed before confir
 tmux -S "$SOCK" send-keys -t s6:0.1 "n" C-m
 sleep 0.6
 right_out2="$(tmux -S "$SOCK" capture-pane -p -t s6:0.1 -S -20)"
-check "scenario 6: declining the first command reaches the second command's own confirmation (not swallowed)" "$right_out2" "[CONFIRM] echo SECOND-CMD"
+check "scenario 6: declining the first command is reported" "$right_out2" "cancelled: mkfs.ext4"
+not_contains "scenario 6: declining the first command stops the batch" "$right_out2" "[CONFIRM] echo SECOND-CMD"
 left_after_n="$(tmux -S "$SOCK" capture-pane -p -J -t s6:0.0 -S -10)"
 not_contains "scenario 6: declined dangerous command still did not execute" "$left_after_n" "No such file or directory"
-check_count "scenario 6: second command is only pending (typed once), not yet executed" "$left_after_n" "SECOND-CMD" 1
-
-tmux -S "$SOCK" send-keys -t s6:0.1 C-m
-sleep 0.6
-left_final="$(tmux -S "$SOCK" capture-pane -p -J -t s6:0.0 -S -10)"
-check_count "scenario 6: second command executes once independently confirmed (typed line + output line)" "$left_final" "SECOND-CMD" 2
+not_contains "scenario 6: second command was never typed" "$left_after_n" "SECOND-CMD"
 tmux -S "$SOCK" send-keys -t s6:0.1 ":quit" C-m
 sleep 0.2
 
@@ -626,5 +622,42 @@ sleep 0.2
 rm -f "$hr_resp"
 unset TS_STUB_RESPONSE_FILE
 tmux -S "$SOCK" set-environment -gu TS_STUB_RESPONSE_FILE 2>/dev/null
+
+# --- Scenario 17: cancellation stops the rest of a batch and :follow ---
+export TS_STUB_RESPONSE=$'echo follow-first\nsystemctl restart networking\necho FOLLOW-SHOULD-NOT-RUN'
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+start_session s17
+tmux -S "$SOCK" send-keys -t s17:0.1 ":auto readonly" C-m
+sleep 0.2
+tmux -S "$SOCK" send-keys -t s17:0.1 ":follow check services" C-m
+sleep 1.4
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s17:0.1 -S -20)"
+check "scenario 17: second command asks for confirmation" "$right_out" "[CONFIRM] systemctl restart networking"
+tmux -S "$SOCK" send-keys -t s17:0.1 "n" C-m
+sleep 1.5
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s17:0.1 -S -30)"
+check "scenario 17: follow reports cancellation" "$right_out" "cancelled: systemctl restart networking"
+check "scenario 17: follow stops after cancellation" "$right_out" "following stopped"
+left_out="$(tmux -S "$SOCK" capture-pane -p -t s17:0.0 -S -20)"
+not_contains "scenario 17: later batch command never runs" "$left_out" "FOLLOW-SHOULD-NOT-RUN"
+tmux -S "$SOCK" send-keys -t s17:0.1 ":quit" C-m
+sleep 0.2
+
+# --- Scenario 18: :cmd must not claim completion when waiting times out ---
+export TS_MAX_WAIT=1 TS_STUB_RESPONSE="echo unused"
+tmux -S "$SOCK" set-environment -g TS_MAX_WAIT "$TS_MAX_WAIT" 2>/dev/null
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+start_session s18
+tmux -S "$SOCK" send-keys -t s18:0.1 ":cmd sleep 4" C-m
+sleep 0.6
+tmux -S "$SOCK" send-keys -t s18:0.1 C-m
+sleep 2.2
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s18:0.1 -S -20)"
+check "scenario 18: timeout is reported" "$right_out" "still running after 1s"
+not_contains "scenario 18: timeout is not reported as completed" "$right_out" "-> ran: sleep 4"
+tmux -S "$SOCK" send-keys -t s18:0.1 ":quit" C-m
+sleep 0.2
+unset TS_MAX_WAIT
+tmux -S "$SOCK" set-environment -gu TS_MAX_WAIT 2>/dev/null
 
 exit $FAIL

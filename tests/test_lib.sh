@@ -54,9 +54,10 @@ run '
 run '
     tmpdir="$(mktemp -d)"
     printf "#!/bin/bash\n" > "$tmpdir/codex"; chmod +x "$tmpdir/codex"
-    PATH="$tmpdir:/usr/bin:/bin"; HOME="/nonexistent"; . "'"$LIB"'"
+    PATH="$tmpdir"; HOME="/nonexistent"; . "'"$LIB"'"
     got="$(ts_pick_engine claude)"
     [ "$got" = "codex" ] && echo "ok - pick_engine falls back to codex" || echo "FAIL - pick_engine fallback (got: $got)"
+    PATH="/usr/bin:/bin"
     rm -rf "$tmpdir"
 '
 

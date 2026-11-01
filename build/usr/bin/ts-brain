@@ -77,6 +77,7 @@ ts_report_result() {
 ts_execute_commands() {
     local parsed="$1" manual="$2" cmd signal cmd_lines=()
     executed=()
+    TS_BATCH_STOPPED=0
     mapfile -t cmd_lines <<< "$parsed"
     for cmd in "${cmd_lines[@]}"; do
         [ -z "$cmd" ] && continue
@@ -100,6 +101,7 @@ ts_execute_commands() {
                 # separator, silently gluing two commands into one garbled
                 # line. Stop the batch instead; remaining lines are lost.
                 ts_wait_stopped_message
+                TS_BATCH_STOPPED=1
                 break
             fi
         else
@@ -110,10 +112,13 @@ ts_execute_commands() {
                     executed+=("${TS_CONFIRMED_COMMAND:-$cmd}")
                 else
                     ts_wait_stopped_message
+                    TS_BATCH_STOPPED=1
                     break
                 fi
             else
                 echo "-> cancelled: $cmd"
+                TS_BATCH_STOPPED=1
+                break
             fi
         fi
     done
@@ -179,6 +184,10 @@ ts_follow() {
         echo "step $round/$TS_FOLLOW_MAX"
         TS_RESULTS=()
         ts_execute_commands "$TS_FOLLOW_COMMANDS" 0
+        if [ "$TS_BATCH_STOPPED" -eq 1 ]; then
+            echo "following stopped; check the left panel before continuing."
+            return 0
+        fi
         if [ "${#executed[@]}" -eq 0 ]; then
             echo "no step ran; stopping."
             return 0
@@ -306,11 +315,14 @@ ts_run_manual_command() {
     ts_type_into_pane "$TS_TARGET" "$cmd"
     signal="ts-done-$$-${RANDOM}${RANDOM}"
     if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR" "$signal"; then
-        ts_wait_command "$signal" "${TS_CONFIRMED_COMMAND:-$cmd}" || ts_wait_stopped_message
-        ts_report_result "${TS_CONFIRMED_COMMAND:-$cmd}" "$signal"
-        sleep 0.2
-        output="$(ts_capture_pane_tail "$TS_TARGET" 20)"
-        ts_history_append "manual command" "${TS_CONFIRMED_COMMAND:-$cmd}" "$output"
+        if ts_wait_command "$signal" "${TS_CONFIRMED_COMMAND:-$cmd}"; then
+            ts_report_result "${TS_CONFIRMED_COMMAND:-$cmd}" "$signal"
+            sleep 0.2
+            output="$(ts_capture_pane_tail "$TS_TARGET" 20)"
+            ts_history_append "manual command" "${TS_CONFIRMED_COMMAND:-$cmd}" "$output"
+        else
+            ts_wait_stopped_message
+        fi
     else
         echo "-> cancelled: $cmd"
     fi
