@@ -237,7 +237,7 @@ ts_redact_secrets() {
 # frequent glueing before) at the cost of losing the nicely labeled
 # multi-section output -- a deliberate trade for not risking a garbled
 # command reaching a real shell.
-TS_SYSTEM_PROMPT="You translate natural-language instructions into shell commands for Linux (the Environment block in the request describes the actual system; assume Debian/Ubuntu if it is missing). Reply ONLY with the required shell commands, one per line, with no explanations, no markdown, and no backticks. Each line must be exactly one standalone command. Never use printf/echo purely to print a cosmetic section header or label -- if the instruction asks for several kinds of information, just list the actual commands to gather each one, in order, with no header lines and no chaining ';'/'&&' between them. If more than one command is needed, list them in order, one per line."
+TS_SYSTEM_PROMPT="You translate natural-language instructions into shell commands for Linux (the Environment block in the request describes the actual system; assume Debian/Ubuntu if it is missing). Reply ONLY with a JSON object, no markdown, no backticks: {\"commands\":[{\"cmd\":\"<one standalone shell command>\",\"why\":\"<one short sentence saying what it does>\",\"risk\":\"low|medium|high\"}]}. risk is low for read-only or harmless commands, medium for reversible changes to files, packages or services, high for anything destructive, irreversible, or affecting disks, boot, users, firewall or network access. Each cmd must be exactly one standalone command. Never use printf/echo purely to print a cosmetic section header or label -- if the instruction asks for several kinds of information, just list the actual commands to gather each one, in order, with no header lines and no chaining ';'/'&&' between them. If more than one command is needed, list them in order."
 
 # No forced default model: measured (2026-09-07, 5+5 interleaved runs) haiku
 # averaging 15.18s vs 10.86s for the CLI's own default on this setup -- the
@@ -272,6 +272,64 @@ $prompt" > /dev/null 2>&1
 
     [ $rc -eq 0 ] && [ -n "$out" ] || return 1
     printf '%s\n' "$out"
+    return 0
+}
+
+# Structured replies: {"commands":[{"cmd":..,"why":..,"risk":..}]}.
+# Fills TS_PARSED (one command per line) plus TS_WHY / TS_RISK, keyed by the
+# command text. Not for use in a subshell. Returns:
+#   0 = valid JSON with commands, 1 = not JSON at all (caller falls back to
+#   the line parser), 2 = JSON but unusable (empty / no commands).
+# Needs python3; without it the reply is treated as "not JSON" (rc 1).
+declare -A TS_WHY=() TS_RISK=()
+TS_PARSED=""
+ts_parse_structured() {
+    local raw="$1" out cmd risk why
+    TS_PARSED=""; TS_WHY=(); TS_RISK=()
+    command -v python3 > /dev/null 2>&1 || return 1
+    out="$(python3 -I -c '
+import json, sys
+raw = sys.stdin.read()
+a, b = raw.find("{"), raw.rfind("}")
+if a < 0 or b <= a:
+    sys.exit(3)
+try:
+    data = json.loads(raw[a:b + 1])
+except Exception:
+    sys.exit(3)
+items = data.get("commands") if isinstance(data, dict) else None
+if not isinstance(items, list):
+    sys.exit(2)
+def clean(v):
+    return " ".join(str(v).split()) if v is not None else ""
+n = 0
+for it in items:
+    if isinstance(it, str):
+        it = {"cmd": it}
+    if not isinstance(it, dict):
+        continue
+    cmd = clean(it.get("cmd"))
+    if not cmd:
+        continue
+    risk = clean(it.get("risk")).lower()
+    if risk not in ("low", "medium", "high"):
+        risk = ""
+    print("\t".join([cmd, risk, clean(it.get("why"))]))
+    n += 1
+sys.exit(0 if n else 2)
+' <<< "$raw")"
+    case $? in
+        0) ;;
+        2) return 2 ;;
+        *) return 1 ;;
+    esac
+    while IFS=$'\t' read -r cmd risk why; do
+        [ -z "$cmd" ] && continue
+        TS_PARSED+="$cmd"$'\n'
+        [ -n "$risk" ] && TS_RISK["$cmd"]="$risk"
+        [ -n "$why" ] && TS_WHY["$cmd"]="$why"
+    done <<< "$out"
+    TS_PARSED="${TS_PARSED%$'\n'}"
     return 0
 }
 
@@ -401,7 +459,7 @@ TS_FIX_EXPLANATION=""
 TS_FIX_COMMANDS=""
 ts_parse_fix() {
     local raw="$1" line explain="" body="" prc
-    TS_FIX_COMMANDS=""
+    TS_FIX_COMMANDS=""; TS_WHY=(); TS_RISK=()
     while IFS= read -r line; do
         case "$line" in
             "# "*|"#") explain+="${line#\#}"$'\n' ;;
@@ -608,17 +666,41 @@ ts_marked_command() {
     printf '%s%s' "$cmd" "$(ts_signal_suffix "$signal")"
 }
 
+TS_EXPLAIN_SYSTEM_PROMPT="You explain a Linux shell command to the person about to run it. In at most four short plain sentences say what it does, what each important option or part means, and anything risky or irreversible about it. No markdown, no backticks."
+
+# Asks the engine to explain a command (used by "?" in the confirm step).
+ts_explain_command() {
+    local cmd="$1" out
+    if [ -z "${TS_ENGINE:-}" ]; then
+        echo "(no AI engine available for an explanation)"
+        return 0
+    fi
+    if out="$(ts_call_engine "$TS_ENGINE" "$(ts_env_context "${TS_TARGET:-}")
+Command: $cmd" "$TS_EXPLAIN_SYSTEM_PROMPT")"; then
+        printf '%s\n' "$out"
+    else
+        echo "(the AI engine did not respond)"
+    fi
+}
+
 ts_confirm_and_send() {
     local target="$1" cmd="$2" return_target="${3:-}" signal="${4:-}" reply edited
     while true; do
         TS_CONFIRMED_COMMAND="$cmd"
         printf '[CONFIRM] %s\n' "$cmd"
-        printf 'enter = run, e = edit, n = cancel: '
+        if [ -n "${TS_WHY[$cmd]:-}" ] || [ -n "${TS_RISK[$cmd]:-}" ]; then
+            printf '   %s%s\n' "${TS_WHY[$cmd]:-}" "${TS_RISK[$cmd]:+  [risk: ${TS_RISK[$cmd]}]}"
+        fi
+        printf 'enter = run, e = edit, ? = explain, n = cancel: '
         if ! IFS= read -r reply || [ "$reply" = "n" ] || [ "$reply" = "N" ]; then
             ts_clear_typed_line "$target"
             return 1
         fi
         case "$reply" in
+            \?)
+                ts_explain_command "$cmd"
+                continue
+                ;;
             e|E|m|M)
                 ts_clear_typed_line "$target"
                 printf 'edit command: '
@@ -690,7 +772,7 @@ TS_FOLLOW_SUMMARY=""
 TS_FOLLOW_COMMANDS=""
 ts_parse_follow() {
     local raw="$1" first prc
-    TS_FOLLOW_DONE=0; TS_FOLLOW_SUMMARY=""; TS_FOLLOW_COMMANDS=""
+    TS_FOLLOW_DONE=0; TS_FOLLOW_SUMMARY=""; TS_FOLLOW_COMMANDS=""; TS_WHY=(); TS_RISK=()
     first="$(grep -m1 -v '^[[:space:]]*$' <<< "$raw")"
     first="${first//[[:space:]]/}"
     if [ "$first" = "DONE" ]; then

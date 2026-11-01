@@ -84,7 +84,7 @@ ts_execute_commands() {
             exit 0
         fi
         signal="ts-done-$$-${RANDOM}${RANDOM}"
-        if [ "$TS_AUTO" -eq 1 ] && [ "$manual" -eq 0 ] && ts_is_safe_readonly_command "$cmd" && ! ts_is_dangerous_command "$cmd"; then
+        if [ "$TS_AUTO" -eq 1 ] && [ "$manual" -eq 0 ] && [ "${TS_RISK[$cmd]:-}" != "high" ] && ts_is_safe_readonly_command "$cmd" && ! ts_is_dangerous_command "$cmd"; then
             # ts_auto_send types cmd itself (combined with the marker) --
             # no separate pre-type here, unlike the confirm branch below.
             ts_auto_send "$TS_TARGET" 0.3 "$cmd" "$TS_OPERATOR" "$signal"
@@ -346,7 +346,14 @@ while true; do
     fi
 
     force_manual=0
-    parsed="$(ts_parse_commands "$raw")"; prc=$?
+    ts_parse_structured "$raw"; src=$?
+    if [ "$src" -eq 0 ]; then
+        parsed="$TS_PARSED"; prc=0
+    elif [ "$src" -eq 2 ]; then
+        parsed="$raw"; prc=2
+    else
+        parsed="$(ts_parse_commands "$raw")"; prc=$?
+    fi
     if [ "$prc" -eq 2 ]; then
         echo "unclear response:"
         echo "$parsed"

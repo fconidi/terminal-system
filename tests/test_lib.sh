@@ -357,4 +357,18 @@ run '
     rm -rf "$d"
 '
 
+run '
+    . "'"$LIB"'"
+    ts_parse_structured '"'"'{"commands":[{"cmd":"ls -la /etc","why":"lists the directory","risk":"low"},{"cmd":"rm -rf /var/cache/foo","why":"deletes the cache","risk":"high"}]}'"'"'; rc=$?
+    [ "$rc" -eq 0 ] && [ "$TS_PARSED" = $'"'"'ls -la /etc\nrm -rf /var/cache/foo'"'"' ] && echo "ok - structured: commands extracted" || echo "FAIL - structured commands (rc=$rc got: $TS_PARSED)"
+    [ "${TS_WHY[ls -la /etc]}" = "lists the directory" ] && [ "${TS_RISK[rm -rf /var/cache/foo]}" = "high" ] && echo "ok - structured: why and risk keyed by command" || echo "FAIL - structured why/risk"
+    ts_parse_structured $'"'"'```json\n{"commands":[{"cmd":"df -h"}]}\n```'"'"'; rc=$?
+    [ "$rc" -eq 0 ] && [ "$TS_PARSED" = "df -h" ] && [ -z "${TS_RISK[df -h]:-}" ] && echo "ok - structured: fenced JSON and missing fields accepted" || echo "FAIL - structured fenced (rc=$rc got: $TS_PARSED)"
+    ts_parse_structured "ls -la"; [ $? -eq 1 ] && echo "ok - structured: plain lines fall back (rc 1)" || echo "FAIL - structured plain lines"
+    ts_parse_structured "awk '"'"'{print \$1}'"'"' file"; [ $? -eq 1 ] && echo "ok - structured: braces in a plain command fall back" || echo "FAIL - structured awk"
+    ts_parse_structured '"'"'{"commands":[]}'"'"'; [ $? -eq 2 ] && echo "ok - structured: empty list is unusable (rc 2)" || echo "FAIL - structured empty"
+    ts_parse_structured '"'"'{"commands":[{"cmd":"a very long command with many many many many many many many words in it ok","risk":"extreme"}]}'"'"'; rc=$?
+    [ "$rc" -eq 0 ] && [ -z "${TS_RISK[a very long command with many many many many many many many words in it ok]:-}" ] && echo "ok - structured: no word limit, unknown risk dropped" || echo "FAIL - structured long (rc=$rc)"
+'
+
 exit $FAIL

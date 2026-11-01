@@ -1,9 +1,10 @@
 Package: terminal-system
-Version: 1.3.0
+Version: 1.4.0
 Section: utils
 Priority: optional
 Architecture: all
 Depends: bash, tmux
+Suggests: python3
 Recommends: xclip
 Maintainer: Franco Conidi aka edmond <fconidi@gmail.com>
 Homepage: https://www.syslinuxos.com
@@ -28,4 +29,4 @@ Description: AI-assisted two-panel terminal (natural language -> shell commands)
  Requires the "claude" and/or "codex" CLI to already be installed and
  authenticated; neither is a hard package dependency since neither ships
  as a .deb on this system.
-Installed-Size: 236
+Installed-Size: 240

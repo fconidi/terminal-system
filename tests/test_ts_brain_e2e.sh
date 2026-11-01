@@ -453,4 +453,34 @@ rm -f "$watch_resp"
 unset TS_STUB_RESPONSE_FILE
 tmux -S "$SOCK" set-environment -gu TS_STUB_RESPONSE_FILE 2>/dev/null
 
+# --- Scenario 13: structured JSON reply; why/risk shown; high risk beats auto; ? explains ---
+json_resp="$(mktemp)"
+cat > "$json_resp" << 'JSON'
+{"commands":[{"cmd":"echo json-low","why":"prints a word","risk":"low"},{"cmd":"echo json-high","why":"pretends to be dangerous","risk":"high"}]}
+JSON
+export TS_STUB_RESPONSE_FILE="$json_resp"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE_FILE "$json_resp" 2>/dev/null
+start_session s13
+tmux -S "$SOCK" send-keys -t s13:0.1 ":auto on" C-m
+sleep 0.2
+tmux -S "$SOCK" send-keys -t s13:0.1 "say words" C-m
+sleep 2
+out="$(tmux -S "$SOCK" capture-pane -p -t s13:0.0 -S -20)"
+check "scenario 13: low-risk read-only command auto-runs" "$out" "json-low"
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s13:0.1 -S -20)"
+check "scenario 13: high-risk command asks despite auto-mode" "$right_out" "[CONFIRM] echo json-high"
+check "scenario 13: confirm shows why and risk" "$right_out" "pretends to be dangerous  [risk: high]"
+printf 'This only prints a word.\n' > "$json_resp"
+tmux -S "$SOCK" send-keys -t s13:0.1 "?" C-m
+sleep 1.5
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s13:0.1 -S -20)"
+check "scenario 13: ? asks the AI to explain" "$right_out" "This only prints a word."
+tmux -S "$SOCK" send-keys -t s13:0.1 "n" C-m
+sleep 0.3
+tmux -S "$SOCK" send-keys -t s13:0.1 ":quit" C-m
+sleep 0.2
+rm -f "$json_resp"
+unset TS_STUB_RESPONSE_FILE
+tmux -S "$SOCK" set-environment -gu TS_STUB_RESPONSE_FILE 2>/dev/null
+
 exit $FAIL

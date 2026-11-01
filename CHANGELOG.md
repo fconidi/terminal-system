@@ -3,6 +3,19 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.4.0] - 2026-11-01
+
+### Added
+- Structured AI replies: every command carries a short explanation and
+  a risk level, shown in the confirmation step. `?` there asks the AI to
+  explain the command. A command rated high always asks for
+  confirmation, even in auto-mode.
+
+### Changed
+- Long commands are no longer rejected by the 12-word heuristic when the
+  reply is structured. Plain-text replies (or a system without
+  `python3`) still use the line-per-command parser.
+
 ## [1.3.0] - 2026-11-01
 
 ### Added

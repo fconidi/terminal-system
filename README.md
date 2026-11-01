@@ -18,7 +18,7 @@ typed into the left panel in real time for you to review and confirm.
   type is sent to the AI engine along with recent session history for
   context; the reply is parsed into one or more shell commands.
 - Each command is typed into the left panel and, by default, waits for
-  manual confirmation (Enter to run, `e` to edit, `n` to cancel).
+  manual confirmation (Enter to run, `e` to edit, `?` to explain, `n` to cancel).
 - An opt-in auto-mode (`:auto readonly`) executes a command without
   asking only if it passes two checks: its first word is a known
   read-only program (`ls`, `cat`, `grep`, `ps`, `git status/log/diff`,
@@ -65,6 +65,13 @@ typed into the left panel in real time for you to review and confirm.
   redacted) is sent to the AI and the advice is printed there. It never
   types anything. `:watch all` asks after every change instead of only
   on errors; `:watch off` closes it. Off by default.
+- The AI answers in a structured form: each command comes with a
+  one-line explanation and a risk level (low / medium / high). Both are
+  shown in the confirmation step, `?` there asks the AI to explain the
+  command in more detail, and a command the AI rates `high` always asks
+  for confirmation, even in auto-mode. Long commands are no longer
+  rejected by a word limit. Without `python3`, or if the reply is plain
+  text, the previous line-per-command handling is used.
 - The AI model used for translation can be overridden with
   `TS_CLAUDE_MODEL` / `TS_CODEX_MODEL` (unset by default, which uses
   each CLI's own default model).

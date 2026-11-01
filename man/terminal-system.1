@@ -74,7 +74,7 @@ the panel is running something other than a shell (for example ssh),
 that program. No terminal output is included in it.
 .SH SAFETY
 Every generated or manual command waits for manual confirmation by
-default. Press Enter to execute it, "e" to edit it, or "n" to cancel it.
+default. Press Enter to execute it, "e" to edit it, "?" to have the AI explain it, or "n" to cancel it. The AI also returns a short explanation and a risk level (low, medium, high) for each command, shown above the prompt; a command rated high always asks, even in auto-mode.
 .PP
 In auto-mode, a command runs without confirmation only if it passes
 .B both
