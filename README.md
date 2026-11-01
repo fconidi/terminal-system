@@ -18,7 +18,7 @@ typed into the left panel in real time for you to review and confirm.
   type is sent to the AI engine along with recent session history for
   context; the reply is parsed into one or more shell commands.
 - Each command is typed into the left panel and, by default, waits for
-  manual confirmation (Enter to run, `e` to edit, `?` to explain, `n` to cancel).
+  manual confirmation (Enter to run, `e` to edit, `?` to explain, `n` to cancel; high-risk commands need a code typed).
 - An opt-in auto-mode (`:auto readonly`) executes a command without
   asking only if it passes two checks: its first word is a known
   read-only program (`ls`, `cat`, `grep`, `ps`, `git status/log/diff`,
@@ -84,13 +84,19 @@ typed into the left panel in real time for you to review and confirm.
   output to the AI provider. F9 (or `:watch pause`) stops it from
   reading anything; F10 (or `:watch resume`) continues. Output produced
   while paused is never sent afterwards.
+- A command rated `high` risk by the AI, or matching the built-in
+  dangerous-pattern list, cannot be run with a stray Enter: the short
+  code shown in the prompt must be typed.
+- `:explain` explains the last command that ran and what its output
+  means (the output, redacted, is sent to the AI); `:explain <command>`
+  explains any command without running it.
 - The AI model used for translation can be overridden with
   `TS_CLAUDE_MODEL` / `TS_CODEX_MODEL` (unset by default, which uses
   each CLI's own default model).
 
 Right-panel commands: `:cmd <command>` (run manually, skip the AI),
 `:manual` (prompt for a manual command), `:auto readonly|off`,
-`:context on|off|show|clear`, `:fix [on|off]`, `:follow <goal>`, `:watch on|all|off|pause|resume`, `:engine claude|codex`, `:quit`. Full
+`:context on|off|show|clear`, `:fix [on|off]`, `:follow <goal>`, `:explain [command]`, `:watch on|all|off|pause|resume`, `:engine claude|codex`, `:quit`. Full
 details in `man/terminal-system.1`.
 
 ## Requirements

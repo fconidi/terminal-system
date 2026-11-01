@@ -24,6 +24,7 @@ TS_CONTEXT_ENABLED=0
 TS_FIX_AUTO=0
 TS_WATCH_PANE=""
 TS_RESULTS=()
+TS_LAST_CMD=""
 TS_LAST_FAIL_CMD=""
 TS_LAST_FAIL_RC=""
 TS_LAST_FAIL_OUT=""
@@ -32,7 +33,7 @@ force_manual=0
 TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: no AI engine found (claude, codex)."; exit 1; }
 
 echo "terminal-system -- engine: $TS_ENGINE (auto: off, context: off)"
-echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :fix [on|off], :follow <goal>, :watch on|all|off|pause|resume, :engine claude|codex, :quit"
+echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :fix [on|off], :follow <goal>, :explain [command], :watch on|all|off|pause|resume, :engine claude|codex, :quit"
 
 ts_other_engine() {
     case "$1" in
@@ -48,6 +49,7 @@ ts_other_engine() {
 ts_report_result() {
     local cmd="$1" signal="$2" rc
     rc="$(ts_read_rc "$signal")" || rc=""
+    TS_LAST_CMD="$cmd"
     if [ -n "$rc" ] && [ "$rc" != "0" ]; then
         TS_RESULTS+=("$cmd (exit $rc)")
     else
@@ -217,6 +219,30 @@ NOTICE
     return 1
 }
 
+# :explain [command] -- explains a command, or (no argument) the last
+# command that ran and what its output means.
+ts_explain() {
+    local arg="${1#"${1%%[![:space:]]*}"}" out
+    if [ -n "$arg" ]; then
+        ts_explain_command "$arg"
+        return 0
+    fi
+    if [ -z "$TS_LAST_CMD" ]; then
+        echo "nothing to explain yet: no command has run."
+        return 0
+    fi
+    out="$(ts_capture_pane_tail "$TS_TARGET" 40 | ts_redact_secrets)"
+    echo "explaining: $TS_LAST_CMD (its last output, redacted, is sent to $TS_ENGINE)"
+    if ! out="$(ts_call_engine "$TS_ENGINE" "$(ts_env_context "$TS_TARGET")
+Command: $TS_LAST_CMD
+Terminal output:
+$out" "$TS_EXPLAIN_RESULT_PROMPT")"; then
+        echo "error: $TS_ENGINE did not respond."
+        return 0
+    fi
+    printf '%s\n' "$out"
+}
+
 # :watch -- opens/closes the observer panel below this one.
 ts_watch_alive() {
     [ -n "$TS_WATCH_PANE" ] && ts_pane_alive "$TS_WATCH_PANE"
@@ -338,6 +364,7 @@ while true; do
         ":fix on") TS_FIX_AUTO=1; echo "fix: on -- a failed command's exit status and last 30 output lines (redacted) are sent to the AI engine automatically; fixes still ask for confirmation"; continue ;;
         ":fix off") TS_FIX_AUTO=0; echo "fix: off"; continue ;;
         ":fix") ts_fix; continue ;;
+        ":explain"|":explain "*) ts_explain "${instruction#:explain}"; continue ;;
         ":watch"|":watch "*) ts_watch "${instruction#:watch}"; continue ;;
         ":follow"|":follow "*) ts_follow "${instruction#:follow}"; continue ;;
         :cmd)

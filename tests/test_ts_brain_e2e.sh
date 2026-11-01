@@ -585,4 +585,46 @@ for v in TS_STATUS_AFTER TS_STATUS_EVERY TS_NOTIFY_AFTER; do tmux -S "$SOCK" set
 tmux -S "$SOCK" send-keys -t s15b:0.1 ":quit" C-m
 sleep 0.2
 
+# --- Scenario 16: high risk needs the code typed; :explain works ---
+hr_resp="$(mktemp)"
+cat > "$hr_resp" << 'JSON'
+{"commands":[{"cmd":"echo risky-ran","why":"harmless in fact","risk":"high"}]}
+JSON
+export TS_STUB_RESPONSE_FILE="$hr_resp"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE_FILE "$hr_resp" 2>/dev/null
+start_session s16
+tmux -S "$SOCK" send-keys -t s16:0.1 "do the risky thing" C-m
+sleep 1.5
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s16:0.1 -S -20)"
+check "scenario 16: high risk asks for a code" "$right_out" "HIGH RISK -- type"
+code="$(grep -o 'type [0-9a-f]\{4\} to run' <<< "$right_out" | tail -1 | awk '{print $2}')"
+tmux -S "$SOCK" send-keys -t s16:0.1 C-m
+sleep 0.8
+out="$(tmux -S "$SOCK" capture-pane -p -t s16:0.0 -S -20)"
+check_count "scenario 16: a bare Enter does not run it" "$out" "risky-ran" 1
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s16:0.1 -S -20)"
+check "scenario 16: bare Enter is refused" "$right_out" "not confirmed"
+tmux -S "$SOCK" send-keys -t s16:0.1 "wrong" C-m
+sleep 0.5
+out="$(tmux -S "$SOCK" capture-pane -p -t s16:0.0 -S -20)"
+check_count "scenario 16: a wrong code does not run it" "$out" "risky-ran" 1
+tmux -S "$SOCK" send-keys -t s16:0.1 "$code" C-m
+sleep 1
+out="$(tmux -S "$SOCK" capture-pane -p -t s16:0.0 -S -20)"
+check_count "scenario 16: the right code runs it (typed line + output)" "$out" "risky-ran" 2
+printf 'It printed a word, nothing more.\n' > "$hr_resp"
+tmux -S "$SOCK" send-keys -t s16:0.1 ":explain" C-m
+sleep 1.5
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s16:0.1 -S -20)"
+check "scenario 16: :explain explains the last command" "$right_out" "It printed a word, nothing more."
+tmux -S "$SOCK" send-keys -t s16:0.1 ":explain tar -xzf a.tgz" C-m
+sleep 1.5
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s16:0.1 -S -8)"
+check "scenario 16: :explain <command> explains that command" "$right_out" "It printed a word"
+tmux -S "$SOCK" send-keys -t s16:0.1 ":quit" C-m
+sleep 0.2
+rm -f "$hr_resp"
+unset TS_STUB_RESPONSE_FILE
+tmux -S "$SOCK" set-environment -gu TS_STUB_RESPONSE_FILE 2>/dev/null
+
 exit $FAIL

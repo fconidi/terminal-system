@@ -668,6 +668,8 @@ ts_marked_command() {
 
 TS_EXPLAIN_SYSTEM_PROMPT="You explain a Linux shell command to the person about to run it. In at most four short plain sentences say what it does, what each important option or part means, and anything risky or irreversible about it. No markdown, no backticks."
 
+TS_EXPLAIN_RESULT_PROMPT="You explain the result of a Linux shell command to the person who ran it. You get the command and the terminal output that followed. In at most five short plain sentences say what the command did, what the output means, and, if it shows an error, the likely cause and the next thing to try. No markdown, no backticks."
+
 # Asks the engine to explain a command (used by "?" in the confirm step).
 ts_explain_command() {
     local cmd="$1" out
@@ -684,14 +686,24 @@ Command: $cmd" "$TS_EXPLAIN_SYSTEM_PROMPT")"; then
 }
 
 ts_confirm_and_send() {
-    local target="$1" cmd="$2" return_target="${3:-}" signal="${4:-}" reply edited
+    local target="$1" cmd="$2" return_target="${3:-}" signal="${4:-}" reply edited code=""
+    # High-risk commands (rated high by the AI, or matching the local
+    # dangerous-pattern list) cannot be run by a stray Enter: the short
+    # code shown must be typed.
+    if [ "${TS_RISK[$cmd]:-}" = "high" ] || ts_is_dangerous_command "$cmd"; then
+        code="$(printf '%04x' $((RANDOM % 65536)))"
+    fi
     while true; do
         TS_CONFIRMED_COMMAND="$cmd"
         printf '[CONFIRM] %s\n' "$cmd"
         if [ -n "${TS_WHY[$cmd]:-}" ] || [ -n "${TS_RISK[$cmd]:-}" ]; then
             printf '   %s%s\n' "${TS_WHY[$cmd]:-}" "${TS_RISK[$cmd]:+  [risk: ${TS_RISK[$cmd]}]}"
         fi
-        printf 'enter = run, e = edit, ? = explain, n = cancel: '
+        if [ -n "$code" ]; then
+            printf 'HIGH RISK -- type %s to run, e = edit, ? = explain, n = cancel: ' "$code"
+        else
+            printf 'enter = run, e = edit, ? = explain, n = cancel: '
+        fi
         if ! IFS= read -r reply || [ "$reply" = "n" ] || [ "$reply" = "N" ]; then
             ts_clear_typed_line "$target"
             return 1
@@ -713,9 +725,17 @@ ts_confirm_and_send() {
                 cmd="$edited"
                 TS_CONFIRMED_COMMAND="$cmd"
                 ts_type_into_pane "$target" "$cmd"
+                code=""
+                if [ "${TS_RISK[$cmd]:-}" = "high" ] || ts_is_dangerous_command "$cmd"; then
+                    code="$(printf '%04x' $((RANDOM % 65536)))"
+                fi
                 continue
                 ;;
         esac
+        if [ -n "$code" ] && [ "$reply" != "$code" ]; then
+            echo "not confirmed: type $code exactly to run this command."
+            continue
+        fi
         # Appending the marker onto whatever's already on the line (rather
         # than clearing and retyping cmd+marker together) is safe here
         # specifically because there's always a real pause since that text

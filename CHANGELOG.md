@@ -3,6 +3,15 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.6.0] - 2026-11-01
+
+### Added
+- High-risk commands (rated high by the AI, or matching the built-in
+  dangerous patterns) need a short code typed in the confirmation step;
+  a bare Enter or a wrong code does not run them.
+- `:explain` explains the last command and its output; `:explain
+  <command>` explains a command without running it.
+
 ## [1.5.0] - 2026-11-01
 
 ### Added
