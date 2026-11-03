@@ -45,9 +45,12 @@ run '
     tmpdir="$(mktemp -d)"
     printf "#!/bin/bash\n" > "$tmpdir/claude"; chmod +x "$tmpdir/claude"
     printf "#!/bin/bash\n" > "$tmpdir/codex"; chmod +x "$tmpdir/codex"
+    printf "#!/bin/bash\n" > "$tmpdir/agy"; chmod +x "$tmpdir/agy"
     PATH="$tmpdir:$PATH"; . "'"$LIB"'"
     got="$(ts_pick_engine claude)"
     [ "$got" = "claude" ] && echo "ok - pick_engine returns requested when available" || echo "FAIL - pick_engine requested (got: $got)"
+    got="$(ts_pick_engine agy)"
+    [ "$got" = "agy" ] && echo "ok - pick_engine returns agy when available" || echo "FAIL - pick_engine agy (got: $got)"
     rm -rf "$tmpdir"
 '
 
@@ -57,6 +60,18 @@ run '
     PATH="$tmpdir"; HOME="/nonexistent"; . "'"$LIB"'"
     got="$(ts_pick_engine claude)"
     [ "$got" = "codex" ] && echo "ok - pick_engine falls back to codex" || echo "FAIL - pick_engine fallback (got: $got)"
+    got="$(ts_pick_engine agy)"
+    [ "$got" = "codex" ] && echo "ok - pick_engine agy falls back to codex" || echo "FAIL - pick_engine agy fallback (got: $got)"
+    PATH="/usr/bin:/bin"
+    rm -rf "$tmpdir"
+'
+
+run '
+    tmpdir="$(mktemp -d)"
+    printf "#!/bin/bash\n" > "$tmpdir/agy"; chmod +x "$tmpdir/agy"
+    PATH="$tmpdir"; HOME="/nonexistent"; . "'"$LIB"'"
+    got="$(ts_pick_engine claude)"
+    [ "$got" = "agy" ] && echo "ok - pick_engine falls back to agy" || echo "FAIL - pick_engine fallback agy (got: $got)"
     PATH="/usr/bin:/bin"
     rm -rf "$tmpdir"
 '
@@ -137,6 +152,26 @@ run '
     args="$(cat "$log")"
     rm -f "$log"
     grep -Fxq -- "--skip-git-repo-check" <<< "$args" && echo "ok - call_engine codex skips the git-repo/trust check" || echo "FAIL - call_engine codex missing --skip-git-repo-check (args: $args)"
+'
+
+run '
+    STUBS="'"$HERE"'/stubs"
+    PATH="$STUBS:$PATH"; . "'"$LIB"'"
+    export TS_STUB_RESPONSE="sudo adduser Pippo"
+    got="$(ts_call_engine agy "create user Pippo")"
+    [ "$got" = "sudo adduser Pippo" ] && echo "ok - call_engine agy returns stub text" || echo "FAIL - call_engine agy (got: $got)"
+'
+
+run '
+    STUBS="'"$HERE"'/stubs"
+    log="$(mktemp)"
+    PATH="$STUBS:$PATH"; . "'"$LIB"'"
+    export TS_STUB_RESPONSE="sudo adduser Pippo"
+    export TS_STUB_ARG_LOG="$log"
+    ts_call_engine agy "create user Pippo" > /dev/null
+    args="$(cat "$log")"
+    rm -f "$log"
+    grep -Fxq -- "-p" <<< "$args" && grep -Fxq -- "--disable-slash-commands" <<< "$args" && echo "ok - call_engine agy uses -p and disables slash commands" || echo "FAIL - call_engine agy flags (args: $args)"
 '
 
 run '

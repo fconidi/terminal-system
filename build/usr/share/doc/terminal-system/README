@@ -1,7 +1,7 @@
 terminal-system — AI-assisted two-panel terminal
 =================================================
 
-Usage: terminal-system [claude|codex]
+Usage: terminal-system [claude|codex|agy]
 
 Opens a tmux session with two panels:
 
@@ -16,15 +16,15 @@ Right-panel commands:
   :manual                 prompt for a manual shell command
   :auto readonly|off      toggle automatic execution (default: off)
   :context on|off|show|clear   opt-in AI context from left-panel output
-  :engine claude|codex    switch AI engine for the rest of the session
+  :engine claude|codex|agy switch AI engine for the rest of the session
   :quit                   end the session
 
 Engine selection:
-  Start with "terminal-system codex" or "terminal-system claude" to
-  choose an engine explicitly. If the active engine is installed but
-  fails at runtime, for example because its quota is exhausted,
-  terminal-system tries the other available engine and switches to it
-  when the fallback call succeeds.
+  Start with "terminal-system codex", "terminal-system claude", or
+  "terminal-system agy" to choose an engine explicitly. If the active
+  engine is installed but fails at runtime, for example because its quota
+  is exhausted, terminal-system tries another available engine and
+  switches to it when the fallback call succeeds.
 
 Confirmation:
   By default every generated or manual command waits for you to press
@@ -65,5 +65,5 @@ Isolation:
   its mouse/copy-paste key bindings don't leak into your other sessions.
 
 Requires:
-  The claude and/or codex CLI already installed and authenticated.
-  Neither is a hard package dependency.
+  The claude, codex, and/or agy CLI already installed and authenticated.
+  None is a hard package dependency.

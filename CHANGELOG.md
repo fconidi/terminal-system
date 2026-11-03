@@ -3,6 +3,13 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+- Support for `agy` (Antigravity CLI) as an AI engine alongside `claude` and `codex`.
+- Support for `TS_AGY_MODEL` environment variable to override the model for `agy`.
+- Engine switching and fallback support for `agy` (`terminal-system agy`, `:engine agy`).
+
 ## [1.2.1] - 2026-11-01
 
 ### Fixed
