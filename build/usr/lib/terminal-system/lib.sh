@@ -11,19 +11,23 @@ ts_resolve_bin() {
     return 1
 }
 
+TS_ENGINES=(claude codex agy)
+
 ts_pick_engine() {
-    local requested="$1" other
-    case "$requested" in
-        claude) other=codex ;;
-        codex)  other=claude ;;
+    local requested="$1" e
+    case " ${TS_ENGINES[*]} " in
+        *" $requested "*) ;;
         *) return 1 ;;
     esac
     if ts_resolve_bin "$requested" > /dev/null 2>&1; then
         echo "$requested"; return 0
     fi
-    if ts_resolve_bin "$other" > /dev/null 2>&1; then
-        echo "$other"; return 0
-    fi
+    for e in "${TS_ENGINES[@]}"; do
+        [ "$e" = "$requested" ] && continue
+        if ts_resolve_bin "$e" > /dev/null 2>&1; then
+            echo "$e"; return 0
+        fi
+    done
     return 1
 }
 
@@ -245,6 +249,7 @@ TS_SYSTEM_PROMPT="You translate natural-language instructions into shell command
 # overridable via env var for anyone who wants to test their own setup.
 TS_CLAUDE_MODEL="${TS_CLAUDE_MODEL:-}"
 TS_CODEX_MODEL="${TS_CODEX_MODEL:-}"
+TS_AGY_MODEL="${TS_AGY_MODEL:-}"
 
 ts_call_engine() {
     local engine="$1" prompt="$2" system_prompt="${3:-$TS_SYSTEM_PROMPT}" bin out rc tmpfile model_args=()
@@ -264,6 +269,15 @@ $prompt" > /dev/null 2>&1
             rc=$?
             out="$(cat "$tmpfile" 2> /dev/null)"
             rm -f "$tmpfile"
+            ;;
+        agy)
+            # Headless mode auto-denies every tool call, so the model can
+            # only answer in text. The prompt must be attached to -p with '='.
+            [ -n "$TS_AGY_MODEL" ] && model_args=(--model "$TS_AGY_MODEL")
+            out="$("$bin" --mode plan "${model_args[@]}" -p="Do not call any tool or run any command yourself; only write the reply text.
+$system_prompt
+$prompt" 2> /dev/null)"
+            rc=$?
             ;;
         *)
             return 1

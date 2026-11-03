@@ -13,7 +13,7 @@ typed into the left panel in real time for you to review and confirm.
 
 ## How it works
 
-- `terminal-system [claude|codex]` opens a tmux session with two panels.
+- `terminal-system [claude|codex|agy]` opens a tmux session with two panels.
 - The right panel runs `ts-brain`, an instruction REPL. Each line you
   type is sent to the AI engine along with recent session history for
   context; the reply is parsed into one or more shell commands.
@@ -96,13 +96,13 @@ typed into the left panel in real time for you to review and confirm.
 
 Right-panel commands: `:cmd <command>` (run manually, skip the AI),
 `:manual` (prompt for a manual command), `:auto readonly|off`,
-`:context on|off|show|clear`, `:fix [on|off]`, `:follow <goal>`, `:explain [command]`, `:watch on|all|off|pause|resume`, `:engine claude|codex`, `:quit`. Full
+`:context on|off|show|clear`, `:fix [on|off]`, `:follow <goal>`, `:explain [command]`, `:watch on|all|off|pause|resume`, `:engine claude|codex|agy`, `:quit`. Full
 details in `man/terminal-system.1`.
 
 ## Requirements
 
 - `bash`, `tmux`, `xclip` (clipboard support for mouse-drag copy)
-- The `claude` and/or `codex` CLI, installed and already authenticated.
+- The `claude`, `codex` and/or `agy` (Antigravity) CLI, installed and already authenticated.
   Neither is a hard package dependency since neither ships as a `.deb`
   on Debian/Ubuntu.
 

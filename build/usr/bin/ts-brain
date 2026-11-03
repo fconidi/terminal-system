@@ -30,17 +30,18 @@ TS_LAST_FAIL_RC=""
 TS_LAST_FAIL_OUT=""
 force_manual=0
 
-TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: no AI engine found (claude, codex)."; exit 1; }
+TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: no AI engine found (claude, codex, agy)."; exit 1; }
 
 echo "terminal-system -- engine: $TS_ENGINE (auto: off, context: off)"
-echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :fix [on|off], :follow <goal>, :explain [command], :watch on|all|off|pause|resume, :engine claude|codex, :quit"
+echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :fix [on|off], :follow <goal>, :explain [command], :watch on|all|off|pause|resume, :engine claude|codex|agy, :quit"
 
 ts_other_engine() {
-    case "$1" in
-        claude) echo codex ;;
-        codex) echo claude ;;
-        *) return 1 ;;
-    esac
+    local e
+    for e in "${TS_ENGINES[@]}"; do
+        [ "$e" = "$1" ] && continue
+        ts_resolve_bin "$e" > /dev/null 2>&1 && { echo "$e"; return 0; }
+    done
+    return 1
 }
 
 # Called after a command finished. Reports its exit status; on a real
@@ -397,7 +398,7 @@ while true; do
             ts_run_manual_command "$manual_cmd"
             continue
             ;;
-        ":engine claude"|":engine codex")
+        ":engine claude"|":engine codex"|":engine agy")
             requested="${instruction#:engine }"
             TS_ENGINE="$(ts_pick_engine "$requested")" || { echo "engine unavailable"; continue; }
             echo "engine: $TS_ENGINE"

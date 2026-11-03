@@ -1,0 +1,5 @@
+#!/bin/bash
+# Stub for tests: mimics `agy --mode plan -p=PROMPT` by printing the response.
+[ -n "${TS_STUB_ARG_LOG:-}" ] && printf '%s\n' "$@" > "$TS_STUB_ARG_LOG"
+printf '%s\n' "${TS_STUB_RESPONSE_AGY:-${TS_STUB_RESPONSE:-}}"
+exit "${TS_STUB_EXIT_AGY:-${TS_STUB_EXIT:-0}}"

@@ -116,6 +116,19 @@ run '
     PATH="$STUBS:$PATH"; . "'"$LIB"'"
     export TS_STUB_RESPONSE="sudo adduser Pippo"
     export TS_STUB_ARG_LOG="$log"
+    got="$(ts_call_engine agy "create user Pippo")"
+    args="$(cat "$log")"
+    rm -f "$log"
+    [ "$got" = "sudo adduser Pippo" ] && echo "ok - call_engine agy returns stub text" || echo "FAIL - call_engine agy (got: $got)"
+    grep -Fxq -- "plan" <<< "$args" && grep -q -- "^-p=" <<< "$args" && echo "ok - call_engine agy uses plan mode and -p=" || echo "FAIL - call_engine agy args: $args"
+'
+
+run '
+    STUBS="'"$HERE"'/stubs"
+    log="$(mktemp)"
+    PATH="$STUBS:$PATH"; . "'"$LIB"'"
+    export TS_STUB_RESPONSE="sudo adduser Pippo"
+    export TS_STUB_ARG_LOG="$log"
     ts_call_engine codex "create user Pippo" > /dev/null
     args="$(cat "$log")"
     rm -f "$log"

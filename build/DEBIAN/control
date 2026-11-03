@@ -1,5 +1,5 @@
 Package: terminal-system
-Version: 1.2.1
+Version: 1.3.0
 Section: utils
 Priority: optional
 Architecture: all
@@ -26,7 +26,7 @@ Description: AI-assisted two-panel terminal (natural language -> shell commands)
  if explicitly enabled (":context on"; off by default), are scanned for
  common secret patterns first, and are never written to disk.
  .
- Requires the "claude" and/or "codex" CLI to already be installed and
+ Requires the "claude", "codex" and/or "agy" CLI to already be installed and
  authenticated; neither is a hard package dependency since neither ships
  as a .deb on this system.
 Installed-Size: 252
