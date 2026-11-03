@@ -1,5 +1,5 @@
 a5a69dba6d52aeeb45cc34c80383c321  etc/xdg/menus/applications-merged/terminal-system.menu
-930c1fde921d9da7863e93a88abdd4bc  usr/bin/terminal-system
+719e1a4b9ca9e9bb2d022aeed0bd0769  usr/bin/terminal-system
 7558e11d9db7356dbc83d5b69fc570bf  usr/bin/ts-brain
 b697f277459e1ef9c87294b648331dd9  usr/bin/ts-watch
 b032057aab4536deddcb1f6504181487  usr/lib/terminal-system/lib.sh
@@ -8,4 +8,4 @@ b032057aab4536deddcb1f6504181487  usr/lib/terminal-system/lib.sh
 77dbe2560724ffad26ff1b1376645803  usr/share/icons/hicolor/128x128/apps/terminal-system.png
 4466cc7138cd91c746d6f4e0afd5ab95  usr/share/icons/hicolor/256x256/apps/terminal-system.png
 4d4d3a124079f03d795e080c88588030  usr/share/icons/hicolor/48x48/apps/terminal-system.png
-628f259ddad5773aeab9f1f6d4b2005e  usr/share/man/man1/terminal-system.1.gz
+3c3907cc7d55334cc66c8c64b77b61cb  usr/share/man/man1/terminal-system.1.gz
