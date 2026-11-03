@@ -3,11 +3,11 @@
 terminal-system \- AI-assisted two-panel terminal
 .SH SYNOPSIS
 .B terminal-system
-[\fIclaude\fR|\fIcodex\fR]
+[\fIclaude\fR|\fIcodex\fR|\fIagy\fR]
 .SH DESCRIPTION
 Opens a tmux session with two panels. The left panel is a normal shell
 where commands run. The right panel accepts instructions in natural
-language; the chosen AI engine (Claude Code or Codex, called
+language; the chosen AI engine (Claude Code, Codex, or agy, called
 non-interactively with no tool access of its own) translates each
 instruction into one or more shell commands, which are typed into the
 left panel in real time.
@@ -76,7 +76,7 @@ meanwhile;
 .B resume
 (F10) continues.
 .TP
-.B :engine claude|codex
+.B :engine claude|codex|agy
 Switch the AI engine for the rest of the session.
 .TP
 .B :quit
@@ -145,6 +145,10 @@ default (uses the CLI's own default).
 .TP
 .B TS_CODEX_MODEL
 Model name passed to \fBcodex\fR's \fB\-\-model\fR flag. Unset by
+default (uses the CLI's own default).
+.TP
+.B TS_AGY_MODEL
+Model name passed to \fBagy\fR's \fB\-\-model\fR flag. Unset by
 default (uses the CLI's own default).
 .SH FILES
 No configuration files. Session context is kept in process memory for

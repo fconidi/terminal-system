@@ -2,7 +2,7 @@
 
 AI-assisted two-panel terminal for tmux. The left panel is a normal shell;
 the right panel takes instructions in natural language, and an AI engine
-(Claude Code or Codex, called non-interactively with no tool access of
+(Claude Code, Codex, or agy, called non-interactively with no tool access of
 its own) translates each instruction into shell command(s), which are
 typed into the left panel in real time for you to review and confirm.
 
@@ -13,7 +13,7 @@ typed into the left panel in real time for you to review and confirm.
 
 ## How it works
 
-- `terminal-system [claude|codex]` opens a tmux session with two panels.
+- `terminal-system [claude|codex|agy]` opens a tmux session with two panels.
 - The right panel runs `ts-brain`, an instruction REPL. Each line you
   type is sent to the AI engine along with recent session history for
   context; the reply is parsed into one or more shell commands.
@@ -91,19 +91,19 @@ typed into the left panel in real time for you to review and confirm.
   means (the output, redacted, is sent to the AI); `:explain <command>`
   explains any command without running it.
 - The AI model used for translation can be overridden with
-  `TS_CLAUDE_MODEL` / `TS_CODEX_MODEL` (unset by default, which uses
-  each CLI's own default model).
+  `TS_CLAUDE_MODEL` / `TS_CODEX_MODEL` / `TS_AGY_MODEL` (unset by default,
+  which uses each CLI's own default model).
 
 Right-panel commands: `:cmd <command>` (run manually, skip the AI),
 `:manual` (prompt for a manual command), `:auto readonly|off`,
-`:context on|off|show|clear`, `:fix [on|off]`, `:follow <goal>`, `:explain [command]`, `:watch on|all|off|pause|resume`, `:engine claude|codex`, `:quit`. Full
+`:context on|off|show|clear`, `:fix [on|off]`, `:follow <goal>`, `:explain [command]`, `:watch on|all|off|pause|resume`, `:engine claude|codex|agy`, `:quit`. Full
 details in `man/terminal-system.1`.
 
 ## Requirements
 
 - `bash`, `tmux`, `xclip` (clipboard support for mouse-drag copy)
-- The `claude` and/or `codex` CLI, installed and already authenticated.
-  Neither is a hard package dependency since neither ships as a `.deb`
+- The `claude`, `codex`, and/or `agy` CLI, installed and already authenticated.
+  None is a hard package dependency since they don't ship as `.deb`
   on Debian/Ubuntu.
 
 ## Install

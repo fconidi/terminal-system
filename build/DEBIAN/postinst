@@ -8,8 +8,8 @@ case "$1" in
         echo "=================================================="
         echo "  terminal-system $VERSION installed"
         echo "=================================================="
-        echo "  Requires claude and/or codex CLI already installed."
-        echo "  Start with:  terminal-system [claude|codex]"
+        echo "  Requires claude, codex, and/or agy CLI already installed."
+        echo "  Start with:  terminal-system [claude|codex|agy]"
         echo "  Help:        terminal-system --help"
         echo ""
         ;;
