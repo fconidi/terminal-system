@@ -23,8 +23,8 @@ Engine selection:
   Start with "terminal-system claude", "terminal-system codex" or "terminal-system agy" to
   choose an engine explicitly. If the active engine is installed but
   fails at runtime, for example because its quota is exhausted,
-  terminal-system tries the other available engine and switches to it
-  when the fallback call succeeds.
+  terminal-system tries each other available engine and switches to the
+  first one that responds.
 
 Confirmation:
   By default every generated or manual command waits for you to press
@@ -66,4 +66,4 @@ Isolation:
 
 Requires:
   The claude, codex and/or agy CLI already installed and authenticated.
-  Neither is a hard package dependency.
+  None is a hard package dependency.

@@ -1,5 +1,5 @@
 Package: terminal-system
-Version: 1.3.0
+Version: 1.3.1
 Section: utils
 Priority: optional
 Architecture: all
@@ -10,8 +10,8 @@ Maintainer: Franco Conidi aka edmond <fconidi@gmail.com>
 Homepage: https://www.syslinuxos.com
 Description: AI-assisted two-panel terminal (natural language -> shell commands)
  A tmux two-panel layout: the right panel takes instructions in natural
- language, an AI engine (Claude Code or Codex, called non-interactively
- and with no tool access of its own) translates each instruction into
+ language. An AI engine (Claude Code, Codex or Antigravity) translates
+ each instruction non-interactively into
  shell command(s), and those commands are typed into the left panel in
  real time.
  .
@@ -27,6 +27,6 @@ Description: AI-assisted two-panel terminal (natural language -> shell commands)
  common secret patterns first, and are never written to disk.
  .
  Requires the "claude", "codex" and/or "agy" CLI to already be installed and
- authenticated; neither is a hard package dependency since neither ships
+ authenticated; none is a hard package dependency since they do not ship
  as a .deb on this system.
 Installed-Size: 252

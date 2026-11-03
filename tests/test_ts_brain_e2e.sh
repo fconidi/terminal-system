@@ -140,6 +140,28 @@ unset TS_STUB_EXIT_CLAUDE TS_STUB_RESPONSE_CODEX
 tmux -S "$SOCK" set-environment -gu TS_STUB_EXIT_CLAUDE 2>/dev/null
 tmux -S "$SOCK" set-environment -gu TS_STUB_RESPONSE_CODEX 2>/dev/null
 
+# --- Scenario 4c: a second failed engine still leaves the third available ---
+export TS_STUB_EXIT_CLAUDE=1 TS_STUB_EXIT_CODEX=1
+export TS_STUB_RESPONSE_AGY="echo runtime-agy"
+tmux -S "$SOCK" set-environment -g TS_STUB_EXIT_CLAUDE "$TS_STUB_EXIT_CLAUDE" 2>/dev/null
+tmux -S "$SOCK" set-environment -g TS_STUB_EXIT_CODEX "$TS_STUB_EXIT_CODEX" 2>/dev/null
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE_AGY "$TS_STUB_RESPONSE_AGY" 2>/dev/null
+start_session s4c
+tmux -S "$SOCK" send-keys -t s4c:0.1 ":auto on" C-m
+sleep 0.2
+tmux -S "$SOCK" send-keys -t s4c:0.1 "use the third engine" C-m
+sleep 1.0
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s4c:0.1 -S -20)"
+check "scenario 4c: reports runtime fallback to agy" "$right_out" "engine: agy"
+out="$(tmux -S "$SOCK" capture-pane -p -t s4c:0.0 -S -10)"
+check "scenario 4c: third engine command ran" "$out" "runtime-agy"
+tmux -S "$SOCK" send-keys -t s4c:0.1 ":quit" C-m
+sleep 0.2
+unset TS_STUB_EXIT_CLAUDE TS_STUB_EXIT_CODEX TS_STUB_RESPONSE_AGY
+tmux -S "$SOCK" set-environment -gu TS_STUB_EXIT_CLAUDE 2>/dev/null
+tmux -S "$SOCK" set-environment -gu TS_STUB_EXIT_CODEX 2>/dev/null
+tmux -S "$SOCK" set-environment -gu TS_STUB_RESPONSE_AGY 2>/dev/null
+
 # --- Scenario 5: unparseable (prosy) response requires explicit confirmation ---
 export TS_STUB_RESPONSE="To complete this operation you should first check the system state and then proceed carefully."
 tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null

@@ -103,7 +103,7 @@ details in `man/terminal-system.1`.
 
 - `bash`, `tmux`, `xclip` (clipboard support for mouse-drag copy)
 - The `claude`, `codex` and/or `agy` (Antigravity) CLI, installed and already authenticated.
-  Neither is a hard package dependency since neither ships as a `.deb`
+  None is a hard package dependency since they do not ship as `.deb` packages
   on Debian/Ubuntu.
 
 ## Install

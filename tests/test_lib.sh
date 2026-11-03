@@ -120,7 +120,7 @@ run '
     args="$(cat "$log")"
     rm -f "$log"
     [ "$got" = "sudo adduser Pippo" ] && echo "ok - call_engine agy returns stub text" || echo "FAIL - call_engine agy (got: $got)"
-    grep -Fxq -- "plan" <<< "$args" && grep -q -- "^-p=" <<< "$args" && echo "ok - call_engine agy uses plan mode and -p=" || echo "FAIL - call_engine agy args: $args"
+    grep -Fxq -- "--settings" <<< "$args" && grep -Fq -- "read_file(*)" <<< "$args" && grep -Fq -- "command(*)" <<< "$args" && grep -Fxq -- "--disable-slash-commands" <<< "$args" && grep -q -- "^-p=" <<< "$args" && echo "ok - call_engine agy denies tools and uses -p=" || echo "FAIL - call_engine agy args: $args"
 '
 
 run '

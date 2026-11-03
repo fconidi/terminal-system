@@ -35,15 +35,6 @@ TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: no AI engine fou
 echo "terminal-system -- engine: $TS_ENGINE (auto: off, context: off)"
 echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :fix [on|off], :follow <goal>, :explain [command], :watch on|all|off|pause|resume, :engine claude|codex|agy, :quit"
 
-ts_other_engine() {
-    local e
-    for e in "${TS_ENGINES[@]}"; do
-        [ "$e" = "$1" ] && continue
-        ts_resolve_bin "$e" > /dev/null 2>&1 && { echo "$e"; return 0; }
-    done
-    return 1
-}
-
 # Called after a command finished. Reports its exit status; on a real
 # failure, remembers it for :fix (in memory only, redacted) and, if
 # :fix on, diagnoses it right away.
@@ -409,18 +400,20 @@ while true; do
     prompt="$(ts_build_prompt "$instruction")"
     if ! raw="$(ts_call_engine "$TS_ENGINE" "$prompt")"; then
         failed_engine="$TS_ENGINE"
-        fallback_engine="$(ts_other_engine "$failed_engine")"
-        if ts_resolve_bin "$fallback_engine" > /dev/null 2>&1; then
+        recovered=0
+        for fallback_engine in "${TS_ENGINES[@]}"; do
+            [ "$fallback_engine" = "$failed_engine" ] && continue
+            ts_resolve_bin "$fallback_engine" > /dev/null 2>&1 || continue
             echo "error: $failed_engine did not respond; trying $fallback_engine."
             if raw="$(ts_call_engine "$fallback_engine" "$prompt")"; then
                 TS_ENGINE="$fallback_engine"
                 echo "engine: $TS_ENGINE"
-            else
-                echo "error: $failed_engine and $fallback_engine did not respond; rephrase the instruction."
-                continue
+                recovered=1
+                break
             fi
-        else
-            echo "error: $failed_engine did not respond and no fallback is available; rephrase the instruction."
+        done
+        if [ "$recovered" -eq 0 ]; then
+            echo "error: no AI engine responded; rephrase the instruction."
             continue
         fi
     fi

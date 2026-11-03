@@ -250,6 +250,7 @@ TS_SYSTEM_PROMPT="You translate natural-language instructions into shell command
 TS_CLAUDE_MODEL="${TS_CLAUDE_MODEL:-}"
 TS_CODEX_MODEL="${TS_CODEX_MODEL:-}"
 TS_AGY_MODEL="${TS_AGY_MODEL:-}"
+TS_AGY_SETTINGS='{"toolPermission":"strict","permissions":{"deny":["read_file(*)","write_file(*)","read_url(*)","execute_url(*)","command(*)","unsandboxed(*)","mcp(*)"]}}'
 
 ts_call_engine() {
     local engine="$1" prompt="$2" system_prompt="${3:-$TS_SYSTEM_PROMPT}" bin out rc tmpfile model_args=()
@@ -271,10 +272,10 @@ $prompt" > /dev/null 2>&1
             rm -f "$tmpfile"
             ;;
         agy)
-            # Headless mode auto-denies every tool call, so the model can
-            # only answer in text. The prompt must be attached to -p with '='.
+            # Deny every tool explicitly, including reads that plan mode allows.
+            # Attach the prompt to -p with '=' for agy's flag parser.
             [ -n "$TS_AGY_MODEL" ] && model_args=(--model "$TS_AGY_MODEL")
-            out="$("$bin" --mode plan "${model_args[@]}" -p="Do not call any tool or run any command yourself; only write the reply text.
+            out="$("$bin" --settings "$TS_AGY_SETTINGS" --disable-slash-commands "${model_args[@]}" -p="Do not call any tool or run any command yourself; only write the reply text.
 $system_prompt
 $prompt" 2> /dev/null)"
             rc=$?

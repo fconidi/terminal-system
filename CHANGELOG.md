@@ -3,12 +3,18 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.3.1] - 2026-11-03
+
+### Fixed
+- Try every available AI engine when the active engine fails.
+- Prevent Antigravity from using tools while generating commands.
+
 ## [1.3.0] - 2026-11-03
 
 ### Added
 - `agy` (Antigravity CLI) as a third AI engine: `terminal-system agy`,
   `:engine agy`, automatic fallback, and `TS_AGY_MODEL` to choose its model.
-  It runs in plan mode, so it can only answer in text.
+  It returns command suggestions for confirmation in the left panel.
 
 ## [1.2.1] - 2026-11-01
 
