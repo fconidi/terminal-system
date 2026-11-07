@@ -3,6 +3,66 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.4.0] - 2026-11-07
+
+### Security
+- Commands from the AI containing control characters (Ctrl-U, Ctrl-O, ESC,
+  line breaks, invisible or bidirectional-override characters) are refused
+  instead of being typed. Ctrl-U could erase a safe-looking prefix and run
+  the rest, and Ctrl-O could submit the line before confirmation.
+- Text from the AI or from the terminal is cleaned of escape sequences before
+  it is printed, so it can no longer redraw or fake the confirmation prompt.
+  The risk level it reports is labelled as an AI estimate.
+- Auto-mode's read-only allowlist now checks each program's options: it no
+  longer auto-runs `git branch -D`, `git remote remove`, `date -s`, abbreviated
+  `journalctl --rotate`, `hostname -F`, `tree -o`, `file -C`, `tail -f` and the
+  like, and it refuses files that usually hold secrets (SSH and GPG keys,
+  `.env`, credentials) and `printenv`.
+- Local danger detection ignores quoting and covers more cases: `rm -rf` on
+  `/`, `~`, `$HOME`, `/home`, `/etc` and other system folders, partitioning and
+  wiping tools on `/dev/...`, writes to block devices, `curl | sh`, recursive
+  `chmod`/`chown` on system folders. The AI can raise the risk, never lower it.
+- Confirmation no longer runs the command on any reply: only Enter or `y`
+  runs it; `no`, `nope` and unknown replies do not. A command rated high by
+  the AI keeps the confirmation code after editing.
+- Secret redaction is case-insensitive and covers `*_TOKEN`, `*_KEY`,
+  `*_PASSWORD`, JSON fields, `Authorization` and `Cookie` headers, URL
+  credentials, `mysql -p`, JWTs, Google and AWS keys and private-key blocks.
+  Commands and instructions are redacted too before they reach the AI.
+- AI engines run from `/` so a project's own settings, hooks or MCP servers
+  are not loaded; claude gets its prompt on stdin (not visible in `ps`) and
+  does not keep a session transcript.
+- `:watch` consent is remembered per AI engine.
+
+### Fixed
+- AI calls time out (`TS_ENGINE_TIMEOUT`, default 120 s) and show that they are
+  waiting; Ctrl-C cancels them and never closes the instruction panel, and
+  Ctrl-D no longer closes it.
+- `:fix`, `:explain`, `:follow` and `:watch` fall back to the other engines like
+  normal instructions do; `:watch` keeps retrying instead of stopping at the
+  first failure.
+- Commands ending in `;`, `&` or a comment no longer break the completion
+  marker; a command that spans several lines is no longer merged; spacing
+  inside commands is preserved.
+- A batch's results are kept per batch, so a `:fix` started by a failing command
+  no longer corrupts the outer batch.
+- Long commands (such as `apt-get install` with many packages) are accepted in
+  `:fix` and `:follow`; `DONE.` ends a `:follow`; half a JSON reply is not
+  proposed as a command.
+- When the left panel runs another program (ssh, su, an editor) the command is
+  typed but not tracked, instead of waiting 30 minutes.
+- Unknown `:` commands are reported instead of being sent to the AI;
+  `:engine` and the launcher say when the requested engine is not installed.
+- F9/F10 are bound only while `:watch` runs, so mc and htop keep them.
+- The launcher starts `ts-brain` by absolute path, cleans up when it cannot
+  attach to a terminal and prints how to resume a detached session.
+- Newest installed nvm node version is used first.
+- The package now ships a `copyright` file and declares its conffile,
+  requires tmux 3.2 or newer, recommends python3 and lists `agy` everywhere.
+
+### Changed
+- Removed internal test notes from the changelog and code comments.
+
 ## [1.3.0] - 2026-11-03
 
 ### Added
@@ -150,8 +210,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 - `ts_wait_pane_idle` now requires two consecutive idle samples 100ms
   apart instead of one -- cheap insurance against a theoretical race
-  in the pane-idle-detection polling that 5/5 empirical trials against
-  a real tmux server didn't reproduce.
+  in the pane-idle-detection polling.
 - `chmod -R <mode> /` is flagged as dangerous for any mode, not just
   the exact value 777.
 - `xclip` moved from `Depends` to `Recommends`, matching the code
@@ -173,8 +232,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 - `tmux send-keys -l` silently drops an unescaped `;` when it is the
-  last character of the argument (verified on live tmux; a `;`
-  embedded elsewhere in the argument is always safe). The old
+  last character of the argument (a `;` embedded elsewhere in the
+  argument is always safe). The old
   one-character-per-call typing loop dodged this by accident; batching
   into multi-character chunks exposed it. Now only a chunk-trailing
   `;` gets the `\;` escape.

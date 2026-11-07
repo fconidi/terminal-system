@@ -2,8 +2,8 @@
 
 AI-assisted two-panel terminal for tmux. The left panel is a normal shell;
 the right panel takes instructions in natural language, and an AI engine
-(Claude Code or Codex, called non-interactively with no tool access of
-its own) translates each instruction into shell command(s), which are
+(Claude Code, Codex or Antigravity, called non-interactively with no
+tool access of its own) translates each instruction into shell command(s), which are
 typed into the left panel in real time for you to review and confirm.
 
 ```
@@ -18,27 +18,39 @@ typed into the left panel in real time for you to review and confirm.
   type is sent to the AI engine along with recent session history for
   context; the reply is parsed into one or more shell commands.
 - Each command is typed into the left panel and, by default, waits for
-  manual confirmation (Enter to run, `e` to edit, `?` to explain, `n` to cancel; high-risk commands need a code typed).
+  manual confirmation (Enter or `y` to run, `e` to edit, `?` to explain, `n` to cancel; any other reply asks again, and high-risk commands need a code typed).
 - An opt-in auto-mode (`:auto readonly`) executes a command without
   asking only if it passes two checks: its first word is a known
-  read-only program (`ls`, `cat`, `grep`, `ps`, `git status/log/diff`,
+  read-only program (`ls`, `cat`, `grep`, `ps`, `git status/branch`,
   `systemctl status`, `journalctl`, `dpkg -l`, `apt list/search/show`,
-  and similar), and it contains none of the shell metacharacters that
+  and similar) used only with options from that program's own allowed
+  list, it names no file that usually holds secrets (SSH/GPG keys, `.env`,
+  credentials), and it contains none of the shell metacharacters that
   could turn a read-only command into something else (redirects,
-  pipes, backticks, `$()`, `;`, `&`). A fixed set of always-dangerous
-  patterns — destructive `rm`, `mkfs`, `dd` onto a device, fork bombs,
-  any recursive `chmod` on `/`, `shutdown`/`reboot`, `killall -9`,
-  `userdel`/`groupdel` on root/sudo/admin accounts, `iptables -F`,
-  writes onto common block devices under `/dev` — is checked as a
-  second layer. Anything not explicitly recognized as safe always
+  pipes, backticks, `$()`, `;`, `&`, parentheses). A fixed set of
+  always-dangerous patterns — destructive `rm` (also on `/`, `~`, `/home`,
+  `/etc` and other system folders, quoted or not), `mkfs`, partitioning or
+  wiping tools and writes onto `/dev` devices, `dd` onto a device, piping
+  into a shell, fork bombs, recursive `chmod`/`chown` on system folders,
+  `shutdown`/`reboot`, `killall -9`, `userdel`/`groupdel` on root/sudo/admin
+  accounts, `iptables -F` — is checked as a second layer, and the AI's own
+  risk rating can only raise the level, never lower it. Anything not
+  explicitly recognized as safe always
   stops for confirmation, even in auto-mode.
+- Commands containing control characters (Ctrl-U, Ctrl-O, ESC, line breaks,
+  invisible or bidirectional-override characters) are refused, and text from
+  the AI or from the terminal is stripped of escape sequences before it is
+  shown, so neither can redraw or fake the confirmation prompt.
 - When a command is likely to need input (`sudo`, `ssh`, `passwd`, an
   editor, a pager), focus moves to the left panel so prompts are answered
   in the shell that's actually running the command, then moves back.
 - Session instructions and command history are kept in memory only if
   `:context on` is used (off by default); recent left-panel output is
   scanned for common secret patterns before being stored, on a
-  best-effort basis. Nothing is written to disk either way.
+  best-effort basis. Nothing about them is written to disk either way;
+  the only file terminal-system writes is the `:watch` consent (one engine
+  name per line) in `$XDG_STATE_HOME/terminal-system/`. The AI CLI itself
+  may keep its own history according to its own settings.
 - terminal-system runs on its own dedicated tmux server (`tmux -L`),
   separate from any other tmux session you have open, so its
   mouse/copy-paste key bindings don't leak into your other sessions.
@@ -71,7 +83,8 @@ typed into the left panel in real time for you to review and confirm.
   command in more detail, and a command the AI rates `high` always asks
   for confirmation, even in auto-mode. Long commands are no longer
   rejected by a word limit. Without `python3`, or if the reply is plain
-  text, the previous line-per-command handling is used.
+  text, a line-per-command handling is used (a line of more than 12 words
+  is accepted only when it starts with a real program).
 - If a command stops at a prompt in the left panel (a yes/no question,
   a password or passphrase, "Continue?", a pager), focus moves there so
   you can answer it, and returns to the instruction panel afterwards.
@@ -80,10 +93,17 @@ typed into the left panel in real time for you to review and confirm.
   panel prints a "still running" line now and then, rings the bell and
   shows a tmux message when a command that ran 15 s or more finishes,
   and Ctrl-C there stops waiting (the command keeps running).
-- `:watch` asks for a one-time acknowledgement before it first sends
-  output to the AI provider. F9 (or `:watch pause`) stops it from
-  reading anything; F10 (or `:watch resume`) continues. Output produced
-  while paused is never sent afterwards.
+- `:watch` asks for a one-time acknowledgement per AI engine before it
+  first sends output to that provider. F9 (or `:watch pause`) stops it from
+  reading anything; F10 (or `:watch resume`) continues; both keys are bound
+  only while `:watch` is running. Output produced while paused is never
+  sent afterwards.
+- If the left panel runs another program (ssh, su, an editor), a command is
+  typed there but its end cannot be tracked.
+- AI calls time out after 120 s (`TS_ENGINE_TIMEOUT`); Ctrl-C cancels a call
+  or the wait for a command, and never closes the instruction panel. If one
+  engine fails, the others are tried. Detaching with Ctrl+b d keeps the
+  session; the launcher prints the `tmux` command to resume it.
 - A command rated `high` risk by the AI, or matching the built-in
   dangerous-pattern list, cannot be run with a stray Enter: the short
   code shown in the prompt must be typed.
@@ -91,8 +111,12 @@ typed into the left panel in real time for you to review and confirm.
   means (the output, redacted, is sent to the AI); `:explain <command>`
   explains any command without running it.
 - The AI model used for translation can be overridden with
-  `TS_CLAUDE_MODEL` / `TS_CODEX_MODEL` (unset by default, which uses
-  each CLI's own default model).
+  `TS_CLAUDE_MODEL` / `TS_CODEX_MODEL` / `TS_AGY_MODEL` (unset by default,
+  which uses each CLI's own default model). Other settings:
+  `TS_ENGINE_TIMEOUT`, `TS_FOLLOW_MAX`, `TS_HISTORY_MAX`,
+  `TS_WATCH_QUIET`, `TS_WATCH_MAX_WAIT`, `TS_WATCH_MIN_INTERVAL`,
+  `TS_WATCH_LANGUAGE`, `TS_STATUS_AFTER`, `TS_STATUS_EVERY`,
+  `TS_NOTIFY_AFTER`, `TS_MAX_WAIT` (see the man page).
 
 Right-panel commands: `:cmd <command>` (run manually, skip the AI),
 `:manual` (prompt for a manual command), `:auto readonly|off`,
@@ -101,7 +125,8 @@ details in `man/terminal-system.1`.
 
 ## Requirements
 
-- `bash`, `tmux`, `xclip` (clipboard support for mouse-drag copy)
+- `bash`, `tmux` 3.2 or newer, `python3` (recommended: structured replies),
+  `xclip` (clipboard support for mouse-drag copy)
 - The `claude`, `codex` and/or `agy` (Antigravity) CLI, installed and already authenticated.
   None is a hard package dependency since they do not ship as `.deb` packages
   on Debian/Ubuntu.

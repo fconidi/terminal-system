@@ -22,6 +22,8 @@ export SOCK
 # leak into the user's other tmux sessions; the test points it at our
 # throwaway socket instead, the same way test_tmux_helpers.sh does.
 export TS_TMUX_SOCK_ARGS="-S $SOCK"
+# There is no terminal to attach to here; keep the session for inspection.
+export TS_KEEP_SESSION=1
 
 check() {
     local desc="$1" got="$2" want="$3"

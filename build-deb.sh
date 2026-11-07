@@ -17,6 +17,7 @@ chmod +x build/usr/bin/terminal-system build/usr/bin/ts-brain build/usr/bin/ts-w
 chmod +x build/DEBIAN/postinst build/DEBIAN/postrm
 
 mkdir -p build/usr/share/doc/terminal-system build/usr/share/man/man1
+cp "$HERE/README.md" build/usr/share/doc/terminal-system/README
 gzip -cn9 "$MAN_SRC" > "$MAN_DST"
 rm -f build/usr/share/man/man1/terminal-system.1
 

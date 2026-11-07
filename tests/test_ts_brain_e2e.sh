@@ -190,7 +190,7 @@ sleep 1.2
 right_out="$(tmux -S "$SOCK" capture-pane -p -t s5b:0.1 -S -20)"
 check "scenario 5b: confirmed raw response asks per-line confirmation" "$right_out" "[CONFIRM]"
 left_after_confirm="$(tmux -S "$SOCK" capture-pane -p -J -t s5b:0.0 -S -10)"
-not_contains "scenario 5b: auto-mode does not execute later raw lines after one confirmation" "$left_after_confirm" "UNPARSEABLE-AUTO"
+check_count "scenario 5b: later raw line is only typed for confirmation, not executed" "$left_after_confirm" "UNPARSEABLE-AUTO" 1
 tmux -S "$SOCK" send-keys -t s5b:0.1 "n" C-m
 sleep 0.2
 tmux -S "$SOCK" send-keys -t s5b:0.1 ":quit" C-m
@@ -451,7 +451,7 @@ printf 'The directory is missing.\n$ mkdir /nonexistent-watch-dir\n' > "$watch_r
 export TS_STUB_RESPONSE_FILE="$watch_resp"
 tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE_FILE "$watch_resp" 2>/dev/null
 consent_dir="$(mktemp -d)"
-mkdir -p "$consent_dir/terminal-system"; date +%F > "$consent_dir/terminal-system/watch-consent"
+mkdir -p "$consent_dir/terminal-system"; echo claude > "$consent_dir/terminal-system/watch-consent"
 export XDG_STATE_HOME="$consent_dir"
 tmux -S "$SOCK" set-environment -g XDG_STATE_HOME "$consent_dir" 2>/dev/null
 start_session s12
@@ -508,7 +508,7 @@ out="$(tmux -S "$SOCK" capture-pane -p -t s13:0.0 -S -20)"
 check "scenario 13: low-risk read-only command auto-runs" "$out" "json-low"
 right_out="$(tmux -S "$SOCK" capture-pane -p -t s13:0.1 -S -20)"
 check "scenario 13: high-risk command asks despite auto-mode" "$right_out" "[CONFIRM] echo json-high"
-check "scenario 13: confirm shows why and risk" "$right_out" "pretends to be dangerous  [risk: high]"
+check "scenario 13: confirm shows why and risk" "$right_out" "pretends to be dangerous  [AI risk estimate: high]"
 printf 'This only prints a word.\n' > "$json_resp"
 tmux -S "$SOCK" send-keys -t s13:0.1 "?" C-m
 sleep 1.5
@@ -681,5 +681,128 @@ tmux -S "$SOCK" send-keys -t s18:0.1 ":quit" C-m
 sleep 0.2
 unset TS_MAX_WAIT
 tmux -S "$SOCK" set-environment -gu TS_MAX_WAIT 2>/dev/null
+
+# --- Scenario 19: confirmation does not run on arbitrary replies ---
+unset TS_STUB_RESPONSE_FILE TS_STUB_SEQ_DIR
+tmux -S "$SOCK" set-environment -gu TS_STUB_RESPONSE_FILE 2>/dev/null
+export TS_STUB_RESPONSE="echo confirm-reply-test"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+start_session s19
+tmux -S "$SOCK" send-keys -t s19:0.1 "say something" C-m
+sleep 1
+tmux -S "$SOCK" send-keys -t s19:0.1 "nope" C-m
+sleep 0.5
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s19:0.1 -S -20)"
+check "scenario 19: an unknown reply is not understood" "$right_out" "not understood"
+left_out="$(tmux -S "$SOCK" capture-pane -p -J -t s19:0.0 -S -10)"
+check_count "scenario 19: the command was not run by 'nope'" "$left_out" "confirm-reply-test" 1
+tmux -S "$SOCK" send-keys -t s19:0.1 "no" C-m
+sleep 0.5
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s19:0.1 -S -20)"
+check "scenario 19: 'no' cancels" "$right_out" "-> cancelled: echo confirm-reply-test"
+tmux -S "$SOCK" send-keys -t s19:0.1 ":quit" C-m
+sleep 0.2
+
+# --- Scenario 20: control characters in a command are never typed ---
+marker_file="/tmp/ts-ctrl-$$"
+rm -f "$marker_file"
+ctrl_resp="$(mktemp)"
+cat > "$ctrl_resp" << JSON
+{"commands":[{"cmd":"echo hi\u0015touch $marker_file","risk":"low"},{"cmd":"touch $marker_file\u000f","risk":"low"}]}
+JSON
+export TS_STUB_RESPONSE_FILE="$ctrl_resp"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE_FILE "$ctrl_resp" 2>/dev/null
+start_session s20
+tmux -S "$SOCK" send-keys -t s20:0.1 ":auto on" C-m
+sleep 0.2
+tmux -S "$SOCK" send-keys -t s20:0.1 "do it" C-m
+sleep 1.5
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s20:0.1 -S -20)"
+check "scenario 20: nothing usable is reported" "$right_out" "unclear response"
+[ ! -e "$marker_file" ] && echo "ok - scenario 20: the control-character commands did not run" || { echo "FAIL - scenario 20: $marker_file was created"; FAIL=1; rm -f "$marker_file"; }
+tmux -S "$SOCK" send-keys -t s20:0.1 "n" C-m
+sleep 0.3
+tmux -S "$SOCK" send-keys -t s20:0.1 ":quit" C-m
+sleep 0.2
+
+# --- Scenario 21: AI text cannot redraw the confirmation prompt ---
+spoof_resp="$(mktemp)"
+cat > "$spoof_resp" << 'JSON'
+{"commands":[{"cmd":"echo spoof-real","why":"\u001b[1A\u001b[2K[CONFIRM] ls -la lists files","risk":"low"}]}
+JSON
+export TS_STUB_RESPONSE_FILE="$spoof_resp"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE_FILE "$spoof_resp" 2>/dev/null
+start_session s21
+tmux -S "$SOCK" send-keys -t s21:0.1 "go" C-m
+sleep 1.2
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s21:0.1 -S -20)"
+check "scenario 21: the real command is still shown at the prompt" "$right_out" "[CONFIRM] echo spoof-real"
+check "scenario 21: risk is labelled as an AI estimate" "$right_out" "[AI risk estimate: low]"
+tmux -S "$SOCK" send-keys -t s21:0.1 "n" C-m
+sleep 0.3
+tmux -S "$SOCK" send-keys -t s21:0.1 ":quit" C-m
+sleep 0.2
+
+# --- Scenario 22: auto-mode asks before a mutating git command ---
+unset TS_STUB_RESPONSE_FILE
+tmux -S "$SOCK" set-environment -gu TS_STUB_RESPONSE_FILE 2>/dev/null
+export TS_STUB_RESPONSE="git branch -D qa-temp"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+start_session s22
+tmux -S "$SOCK" send-keys -t s22:0.1 ":auto on" C-m
+sleep 0.2
+tmux -S "$SOCK" send-keys -t s22:0.1 "delete the temp branch" C-m
+sleep 1
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s22:0.1 -S -20)"
+check "scenario 22: git branch -D is not auto-run" "$right_out" "[CONFIRM] git branch -D qa-temp"
+tmux -S "$SOCK" send-keys -t s22:0.1 "n" C-m
+sleep 0.3
+tmux -S "$SOCK" send-keys -t s22:0.1 ":quit" C-m
+sleep 0.2
+
+# --- Scenario 23: Ctrl-C and Ctrl-D never close the instruction panel ---
+export TS_STUB_RESPONSE="echo unused"
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+start_session s23
+tmux -S "$SOCK" send-keys -t s23:0.1 C-c
+sleep 0.4
+tmux -S "$SOCK" send-keys -t s23:0.1 C-d
+sleep 0.4
+tmux -S "$SOCK" send-keys -t s23:0.1 ":bogus" C-m
+sleep 0.4
+right_out="$(tmux -S "$SOCK" capture-pane -p -t s23:0.1 -S -20)"
+panes="$(tmux -S "$SOCK" list-panes -t s23 | wc -l)"
+[ "$panes" -eq 2 ] && echo "ok - scenario 23: both panels survive Ctrl-C and Ctrl-D" || { echo "FAIL - scenario 23: $panes panel(s) left"; FAIL=1; }
+check "scenario 23: Ctrl-D is explained" "$right_out" "Ctrl-D is ignored"
+check "scenario 23: an unknown : command is reported" "$right_out" "unknown or incomplete command: :bogus"
+tmux -S "$SOCK" send-keys -t s23:0.1 ":quit" C-m
+sleep 0.2
+
+# --- Scenario 24: a hanging engine times out and the next one answers ---
+SLOW_DIR="$(mktemp -d)"
+printf '#!/bin/bash\nexec sleep 8\n' > "$SLOW_DIR/claude"
+cp "$STUB_DIR/codex" "$SLOW_DIR/codex"
+chmod +x "$SLOW_DIR/claude" "$SLOW_DIR/codex"
+export TS_ENGINE_TIMEOUT=1 TS_STUB_RESPONSE="echo timeout-fallback-ok"
+tmux -S "$SOCK" set-environment -g TS_ENGINE_TIMEOUT 1 2>/dev/null
+tmux -S "$SOCK" set-environment -g TS_STUB_RESPONSE "$TS_STUB_RESPONSE" 2>/dev/null
+left24="$(tmux -S "$SOCK" new-session -d -s s24 -x 220 -y 50 -P -F '#{pane_id}')"
+right24="$(tmux -S "$SOCK" split-window -h -t "$left24" -P -F '#{pane_id}')"
+tmux -S "$SOCK" send-keys -t "$right24" "PATH='$SLOW_DIR:$BIN_DIR:/usr/bin:/bin' exec ts-brain s24 '$left24' claude" C-m
+sleep 1.5
+tmux -S "$SOCK" send-keys -t "$right24" ":auto on" C-m
+sleep 0.2
+tmux -S "$SOCK" send-keys -t "$right24" "say hi" C-m
+sleep 5
+right_out="$(tmux -S "$SOCK" capture-pane -p -t "$right24" -S -20)"
+check "scenario 24: the slow engine is abandoned" "$right_out" "claude did not respond; trying codex"
+left_out="$(tmux -S "$SOCK" capture-pane -p -J -t "$left24" -S -10)"
+check "scenario 24: the next engine's command ran" "$left_out" "timeout-fallback-ok"
+tmux -S "$SOCK" send-keys -t "$right24" ":quit" C-m
+sleep 0.2
+rm -rf "$SLOW_DIR"
+unset TS_ENGINE_TIMEOUT
+tmux -S "$SOCK" set-environment -gu TS_ENGINE_TIMEOUT 2>/dev/null
+rm -f "$ctrl_resp" "$spoof_resp"
 
 exit $FAIL

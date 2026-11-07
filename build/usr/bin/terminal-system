@@ -4,7 +4,7 @@
 # instructions, left panel receives the generated shell commands.
 set -uo pipefail
 
-VERSION="1.3.0"
+VERSION="1.4.0"
 SCRIPT_LIBDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib/terminal-system" && pwd)"
 if [ -f "$SCRIPT_LIBDIR/lib.sh" ]; then
     LIBDIR="$SCRIPT_LIBDIR"
@@ -17,12 +17,13 @@ fi
 die() { echo "terminal-system: $*" >&2; exit 1; }
 
 cmd_start() {
-    local requested="${1:-}" engine session left_pane right_pane sock_args=()
+    local requested="${1:-}" engine session left_pane right_pane sock_args=() brain
     [ -n "${TMUX:-}" ] && die "already inside a tmux session -- detach or exit first (Ctrl+b d)."
     command -v tmux > /dev/null 2>&1 || die "tmux is not installed."
 
     if [ -n "$requested" ]; then
         engine="$(ts_pick_engine "$requested")" || die "no AI engine found (claude, codex, agy)."
+        [ "$engine" != "$requested" ] && echo "terminal-system: $requested is not installed; using $engine." >&2
     else
         engine="$(ts_pick_engine claude)" 2> /dev/null || engine="$(ts_pick_engine codex)" 2> /dev/null || engine="$(ts_pick_engine agy)" 2> /dev/null || die "no AI engine found (claude, codex, agy)."
     fi
@@ -52,13 +53,22 @@ cmd_start() {
         tmux "${sock_args[@]}" bind-key -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "xclip -in -selection clipboard"
         tmux "${sock_args[@]}" bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "xclip -in -selection clipboard"
     fi
-    # F9 / F10 pause and resume the :watch observer (nothing is read or
-    # sent while paused). Safe on this dedicated server only.
-    tmux "${sock_args[@]}" bind-key -n F9 set-option @ts_watch_paused 1 \; display-message "watch: paused"
-    tmux "${sock_args[@]}" bind-key -n F10 set-option @ts_watch_paused 0 \; display-message "watch: resumed"
+    # F9 / F10 (pause / resume of :watch) are bound by :watch itself, only
+    # while the observer runs, so they stay free for mc, htop and the like.
     right_pane="$(tmux "${sock_args[@]}" split-window -h -t "$left_pane" -P -F '#{pane_id}')" || die "could not create the tmux pane."
-    tmux "${sock_args[@]}" send-keys -t "$right_pane" "exec ts-brain '$session' '$left_pane' '$engine'" C-m
-    exec tmux "${sock_args[@]}" attach -t "$session"
+    brain="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ts-brain"
+    [ -x "$brain" ] || brain="ts-brain"
+    tmux "${sock_args[@]}" send-keys -t "$right_pane" "exec $(printf '%q' "$brain") '$session' '$left_pane' '$engine'" C-m
+    if ! tmux "${sock_args[@]}" attach -t "$session"; then
+        # No usable terminal: do not leave a session and a REPL running
+        # unseen (TS_KEEP_SESSION=1 keeps it, for debugging and the test suite).
+        [ "${TS_KEEP_SESSION:-0}" = "1" ] || tmux "${sock_args[@]}" kill-session -t "$session" > /dev/null 2>&1
+        die "could not attach to the tmux session (is this a terminal?)."
+    fi
+    if tmux "${sock_args[@]}" has-session -t "$session" 2> /dev/null; then
+        echo "terminal-system: detached; the session is still running."
+        echo "Resume it with:  tmux ${sock_args[*]} attach -t $session"
+    fi
 }
 
 cmd_help() {
@@ -84,8 +94,9 @@ Usage: terminal-system [claude|codex|agy]
     :quit                   close the session
 
   Auto-mode only skips confirmation for a fixed allowlist of read-only
-  commands (ls, cat, grep, ps, git status/branch, systemctl status,
-  and similar -- no redirects, pipes, substitution, or chaining). Anything
+  commands, each with its own list of allowed options (ls, cat, grep, ps,
+  git status/branch, systemctl status, and similar -- no redirects, pipes,
+  substitution, or chaining, and no files that usually hold secrets). Anything
   else, plus a fixed set of always-dangerous patterns (rm -rf /, mkfs, dd
   to /dev, etc.), always requires manual confirmation.
 EOF
@@ -95,5 +106,5 @@ case "${1:-}" in
     -h|--help|help) cmd_help ;;
     -V|--version|version) echo "terminal-system $VERSION" ;;
     claude|codex|agy|"") cmd_start "${1:-}" ;;
-    *) cmd_help; exit 1 ;;
+    *) echo "terminal-system: unknown argument: $1" >&2; cmd_help >&2; exit 1 ;;
 esac

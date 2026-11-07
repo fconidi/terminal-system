@@ -1,6 +1,9 @@
 #!/bin/bash
 # Stub for tests: mimics `claude -p ...` by printing $TS_STUB_RESPONSE.
-[ -n "${TS_STUB_ARG_LOG:-}" ] && printf '%s\n' "$@" > "$TS_STUB_ARG_LOG"
+# The real engine gets its prompt on stdin; log it with the arguments.
+stdin_text=""
+[ ! -t 0 ] && stdin_text="$(cat)"
+[ -n "${TS_STUB_ARG_LOG:-}" ] && { printf '%s\n' "$@"; printf '%s\n' "$stdin_text"; } > "$TS_STUB_ARG_LOG"
 if [ -n "${TS_STUB_SEQ_DIR:-}" ] && [ -d "$TS_STUB_SEQ_DIR" ]; then
     n=$(( $(cat "$TS_STUB_SEQ_DIR/.n" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$TS_STUB_SEQ_DIR/.n"
     [ -f "$TS_STUB_SEQ_DIR/$n" ] || n=$(ls "$TS_STUB_SEQ_DIR" | grep -E '^[0-9]+$' | sort -n | tail -1)

@@ -31,6 +31,10 @@ TS_LAST_FAIL_OUT=""
 force_manual=0
 
 TS_ENGINE="$(ts_pick_engine "$TS_ENGINE")" || { echo "ts-brain: no AI engine found (claude, codex, agy)."; exit 1; }
+TS_ASK_VERBOSE=1
+# Ctrl-C cancels what is running (an engine call, a wait) or clears the prompt;
+# it must never close this panel.
+trap 'TS_INTERRUPTED=1' INT
 
 echo "terminal-system -- engine: $TS_ENGINE (auto: off, context: off)"
 echo "Type an instruction, or :cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :fix [on|off], :follow <goal>, :explain [command], :watch on|all|off|pause|resume, :engine claude|codex|agy, :quit"
@@ -67,9 +71,7 @@ ts_report_result() {
 # $2=1 forces confirmation for every command (auto-mode ignored).
 # Fills the global array "executed".
 ts_execute_commands() {
-    local parsed="$1" manual="$2" cmd signal cmd_lines=()
-    executed=()
-    TS_BATCH_STOPPED=0
+    local parsed="$1" manual="$2" cmd prepared signal cmd_lines=() mine=() stopped=0 shown
     mapfile -t cmd_lines <<< "$parsed"
     for cmd in "${cmd_lines[@]}"; do
         [ -z "$cmd" ] && continue
@@ -78,61 +80,92 @@ ts_execute_commands() {
             tmux kill-session -t "$TS_SESSION" 2> /dev/null
             exit 0
         fi
+        # A comment-only line is nothing to run.
+        [[ "$cmd" =~ ^[[:space:]]*# ]] && continue
+        if ! prepared="$(ts_prepare_command "$cmd")"; then
+            echo "-> skipped: $(ts_clean_text <<< "$cmd")"
+            echo "   (control characters, a background '&' or an unfinished line cannot be run here)"
+            stopped=1
+            break
+        fi
+        if [ "$prepared" != "$cmd" ]; then
+            [ -n "${TS_RISK[$cmd]:-}" ] && TS_RISK["$prepared"]="${TS_RISK[$cmd]}"
+            [ -n "${TS_WHY[$cmd]:-}" ] && TS_WHY["$prepared"]="${TS_WHY[$cmd]}"
+            cmd="$prepared"
+        fi
+        if ! ts_left_panel_tracked "$TS_TARGET"; then
+            # The completion marker would be typed into ssh/su/an editor: the
+            # command is typed and confirmed as usual, but not tracked.
+            echo "note: the left panel is running another program; the command is typed there but its end cannot be tracked."
+            ts_type_into_pane "$TS_TARGET" "$cmd" || { stopped=1; break; }
+            if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR" ""; then
+                echo "-> sent: ${TS_CONFIRMED_COMMAND:-$cmd} (not tracked)"
+                mine+=("${TS_CONFIRMED_COMMAND:-$cmd}")
+            else
+                echo "-> cancelled: $cmd"
+            fi
+            stopped=1
+            break
+        fi
         signal="ts-done-$$-${RANDOM}${RANDOM}"
         if [ "$TS_AUTO" -eq 1 ] && [ "$manual" -eq 0 ] && [ "${TS_RISK[$cmd]:-}" != "high" ] && ts_is_safe_readonly_command "$cmd" && ! ts_is_dangerous_command "$cmd"; then
-            # ts_auto_send types cmd itself (combined with the marker) --
-            # no separate pre-type here, unlike the confirm branch below.
+            # ts_auto_send types cmd itself (combined with the marker).
             ts_auto_send "$TS_TARGET" 0.3 "$cmd" "$TS_OPERATOR" "$signal"
             if ts_wait_command "$signal" "$cmd"; then
                 ts_report_result "$cmd" "$signal"
-                executed+=("$cmd")
+                mine+=("$cmd")
             else
-                # Signal never fired (e.g. stuck at a password prompt the
-                # user hasn't answered yet). Typing the next queued command
-                # now would land on that still-busy input line with no
-                # separator, silently gluing two commands into one garbled
-                # line. Stop the batch instead; remaining lines are lost.
+                # The signal never fired (a password prompt not answered yet,
+                # say). Typing the next command now would glue two commands
+                # onto one busy input line, so the batch stops here.
                 ts_wait_stopped_message
-                TS_BATCH_STOPPED=1
+                stopped=1
                 break
             fi
         else
-            ts_type_into_pane "$TS_TARGET" "$cmd"
+            ts_type_into_pane "$TS_TARGET" "$cmd" || { stopped=1; break; }
             if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR" "$signal"; then
                 if ts_wait_command "$signal" "${TS_CONFIRMED_COMMAND:-$cmd}"; then
                     ts_report_result "${TS_CONFIRMED_COMMAND:-$cmd}" "$signal"
-                    executed+=("${TS_CONFIRMED_COMMAND:-$cmd}")
+                    mine+=("${TS_CONFIRMED_COMMAND:-$cmd}")
                 else
                     ts_wait_stopped_message
-                    TS_BATCH_STOPPED=1
+                    stopped=1
                     break
                 fi
             else
                 echo "-> cancelled: $cmd"
-                TS_BATCH_STOPPED=1
+                stopped=1
                 break
             fi
         fi
     done
+    # Results are published only at the end: a nested call (a :fix started by
+    # a failed command in this batch) must not overwrite this batch's state.
+    executed=("${mine[@]}")
+    TS_BATCH_STOPPED=$stopped
 }
 
 # Asks the engine why TS_LAST_FAIL_CMD failed. The explanation is printed;
 # any fix command always goes through the confirm step (never auto-run,
 # even in auto-mode).
 ts_fix() {
-    local raw prc
+    local prc ask
     if [ -z "$TS_LAST_FAIL_CMD" ]; then
         echo "nothing to fix: no failed command recorded."
         return 0
     fi
-    echo "diagnosing: $TS_LAST_FAIL_CMD (exit $TS_LAST_FAIL_RC)"
-    if ! raw="$(ts_call_engine "$TS_ENGINE" "$(ts_build_fix_prompt "$TS_LAST_FAIL_CMD" "$TS_LAST_FAIL_RC" "$TS_LAST_FAIL_OUT")" "$TS_FIX_SYSTEM_PROMPT")"; then
-        echo "error: $TS_ENGINE did not respond; try :fix again or :engine."
+    echo "diagnosing: $(ts_clean_text <<< "$TS_LAST_FAIL_CMD") (exit $TS_LAST_FAIL_RC)"
+    ts_ask "$(ts_build_fix_prompt "$TS_LAST_FAIL_CMD" "$TS_LAST_FAIL_RC" "$TS_LAST_FAIL_OUT")" "$TS_FIX_SYSTEM_PROMPT"; ask=$?
+    if [ "$ask" -eq 2 ]; then
+        return 0
+    elif [ "$ask" -ne 0 ]; then
+        echo "error: no AI engine responded; try :fix again or :engine."
         return 0
     fi
     TS_LAST_FAIL_CMD=""
-    ts_parse_fix "$raw"; prc=$?
-    [ -n "${TS_FIX_EXPLANATION//[[:space:]]/}" ] && printf 'cause: %s\n' "$TS_FIX_EXPLANATION"
+    ts_parse_fix "$TS_REPLY"; prc=$?
+    [ -n "${TS_FIX_EXPLANATION//[[:space:]]/}" ] && printf 'cause: %s\n' "$(ts_clean_text <<< "$TS_FIX_EXPLANATION")"
     if [ "$prc" -eq 2 ]; then
         echo "no usable fix command in the reply."
         return 0
@@ -146,26 +179,31 @@ ts_fix() {
 # same command comes back twice, or TS_FOLLOW_MAX rounds have run. Every
 # command still goes through the normal confirm / read-only auto path.
 ts_follow() {
-    local goal="$1" round steps="" raw prc out last_cmd="" step
+    local goal="$1" round steps="" raw prc out last_cmd="" step ask
     if [ -z "$goal" ]; then
         echo "usage: :follow <goal>"
         return 0
     fi
+    goal="${goal#"${goal%%[![:space:]]*}"}"
     echo "following: $goal (up to $TS_FOLLOW_MAX steps; each step's output, redacted, is sent back to the AI engine)"
     for ((round = 1; round <= TS_FOLLOW_MAX; round++)); do
-        if ! raw="$(ts_call_engine "$TS_ENGINE" "$(ts_build_follow_prompt "$goal" "$steps")" "$TS_FOLLOW_SYSTEM_PROMPT")"; then
-            echo "error: $TS_ENGINE did not respond; stopping."
+        ts_ask "$(ts_build_follow_prompt "$goal" "$steps")" "$TS_FOLLOW_SYSTEM_PROMPT"; ask=$?
+        if [ "$ask" -eq 2 ]; then
+            return 0
+        elif [ "$ask" -ne 0 ]; then
+            echo "error: no AI engine responded; stopping."
             return 0
         fi
+        raw="$TS_REPLY"
         ts_parse_follow "$raw"; prc=$?
         if [ "$prc" -eq 2 ]; then
             echo "unclear response; stopping:"
-            echo "$raw"
+            ts_clean_text <<< "$raw"
             return 0
         fi
         if [ "$TS_FOLLOW_DONE" -eq 1 ]; then
             echo "done."
-            [ -n "$TS_FOLLOW_SUMMARY" ] && printf '%s\n' "$TS_FOLLOW_SUMMARY"
+            [ -n "$TS_FOLLOW_SUMMARY" ] && ts_clean_text <<< "$TS_FOLLOW_SUMMARY"
             return 0
         fi
         if [ "$TS_FOLLOW_COMMANDS" = "$last_cmd" ]; then
@@ -186,7 +224,7 @@ ts_follow() {
         fi
         sleep 0.3
         out="$(ts_capture_pane_tail "$TS_TARGET" 40 | ts_redact_secrets)"
-        step="$(printf '%s\n' "${TS_RESULTS[@]}")"
+        step="$(printf '%s\n' "${TS_RESULTS[@]}" | ts_redact_secrets)"
         steps+="step ${round}: ${step}
 output:
 ${out}
@@ -198,21 +236,22 @@ ${out}
 # One-time acknowledgement that :watch sends terminal output to the AI
 # provider. Remembered per user in the XDG state directory.
 ts_watch_consent() {
-    local dir file reply
+    local engine="$1" dir file reply
     dir="${XDG_STATE_HOME:-$HOME/.local/state}/terminal-system"
     file="$dir/watch-consent"
-    [ -f "$file" ] && return 0
-    cat << 'NOTICE'
+    # Consent is per AI provider: switching engine asks again.
+    [ -f "$file" ] && grep -qxF "$engine" "$file" 2> /dev/null && return 0
+    cat << NOTICE
 :watch reads the left panel and sends its recent output to the AI
-provider you selected, through your authenticated CLI (normal account
-usage). Secrets are redacted on a best-effort basis only. Press F9 or run
-:watch pause at any time to stop it from reading anything.
+provider you selected ($engine), through your authenticated CLI (normal
+account usage). Secrets are redacted on a best-effort basis only. Press F9
+or run :watch pause at any time to stop it from reading anything.
 NOTICE
     printf 'Allow this? y = yes, anything else = no: '
     IFS= read -r reply || return 1
     case "$reply" in
         y|Y|yes|YES)
-            mkdir -p "$dir" 2> /dev/null && date +%F > "$file" 2> /dev/null
+            mkdir -p "$dir" 2> /dev/null && printf '%s\n' "$engine" >> "$file" 2> /dev/null
             return 0
             ;;
     esac
@@ -223,7 +262,7 @@ NOTICE
 # :explain [command] -- explains a command, or (no argument) the last
 # command that ran and what its output means.
 ts_explain() {
-    local arg="${1#"${1%%[![:space:]]*}"}" out
+    local arg="${1#"${1%%[![:space:]]*}"}" out ask
     if [ -n "$arg" ]; then
         ts_explain_command "$arg"
         return 0
@@ -234,14 +273,17 @@ ts_explain() {
     fi
     out="$(ts_capture_pane_tail "$TS_TARGET" 40 | ts_redact_secrets)"
     echo "explaining: $TS_LAST_CMD (its last output, redacted, is sent to $TS_ENGINE)"
-    if ! out="$(ts_call_engine "$TS_ENGINE" "$(ts_env_context "$TS_TARGET")
-Command: $TS_LAST_CMD
+    ts_ask "$(ts_env_context "$TS_TARGET")
+Command: $(ts_redact_secrets <<< "$TS_LAST_CMD")
 Terminal output:
-$out" "$TS_EXPLAIN_RESULT_PROMPT")"; then
-        echo "error: $TS_ENGINE did not respond."
+$out" "$TS_EXPLAIN_RESULT_PROMPT"; ask=$?
+    if [ "$ask" -eq 2 ]; then
+        return 0
+    elif [ "$ask" -ne 0 ]; then
+        echo "error: no AI engine responded."
         return 0
     fi
-    printf '%s\n' "$out"
+    ts_clean_text <<< "$TS_REPLY"
 }
 
 # :watch -- opens/closes the observer panel below this one.
@@ -260,6 +302,9 @@ ts_watch() {
                 echo "watch: already off"
             fi
             TS_WATCH_PANE=""
+            # F9/F10 are free again for programs in the left panel (mc, htop).
+            tmux unbind-key -n F9 2> /dev/null
+            tmux unbind-key -n F10 2> /dev/null
             ;;
         on|all)
             [ "$mode" = "on" ] && mode="errors"
@@ -270,8 +315,11 @@ ts_watch() {
                 echo "watch: ts-watch not found."
                 return 0
             fi
-            ts_watch_consent || return 0
+            ts_watch_consent "$TS_ENGINE" || return 0
             tmux set-option -t "$TS_SESSION" @ts_watch_paused 0 2> /dev/null
+            # Pause/resume keys exist only while the observer runs.
+            tmux bind-key -n F9 set-option @ts_watch_paused 1 \; display-message "watch: paused" 2> /dev/null
+            tmux bind-key -n F10 set-option @ts_watch_paused 0 \; display-message "watch: resumed" 2> /dev/null
             TS_WATCH_PANE="$(tmux split-window -d -v -l 12 -t "$TS_OPERATOR" -P -F '#{pane_id}' \
                 "PATH='$PATH' exec '$TS_WATCH_BIN' '$TS_TARGET' '$TS_ENGINE' '$mode'")" || { echo "watch: could not open the panel."; TS_WATCH_PANE=""; return 0; }
             echo "watch: on ($mode) -- the left panel's recent output (secrets redacted) is sent to $TS_ENGINE; advice appears in the panel below, nothing is typed for you"
@@ -304,7 +352,21 @@ ts_run_manual_command() {
         tmux kill-session -t "$TS_SESSION" 2> /dev/null
         exit 0
     fi
-    ts_type_into_pane "$TS_TARGET" "$cmd"
+    if ! cmd="$(ts_prepare_command "$cmd")"; then
+        echo "that command cannot be used here (control characters, a background '&', or an unfinished line)."
+        return 0
+    fi
+    if ! ts_left_panel_tracked "$TS_TARGET"; then
+        echo "note: the left panel is running another program; the command is typed there but its end cannot be tracked."
+        ts_type_into_pane "$TS_TARGET" "$cmd" || return 0
+        if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR" ""; then
+            echo "-> sent: ${TS_CONFIRMED_COMMAND:-$cmd} (not tracked)"
+        else
+            echo "-> cancelled: $cmd"
+        fi
+        return 0
+    fi
+    ts_type_into_pane "$TS_TARGET" "$cmd" || return 0
     signal="ts-done-$$-${RANDOM}${RANDOM}"
     if ts_confirm_and_send "$TS_TARGET" "$cmd" "$TS_OPERATOR" "$signal"; then
         if ts_wait_command "$signal" "${TS_CONFIRMED_COMMAND:-$cmd}"; then
@@ -320,13 +382,34 @@ ts_run_manual_command() {
     fi
 }
 
+eof_count=0
 while true; do
     printf '> '
     if [ -t 0 ]; then
-        IFS= read -e -r instruction || break
+        IFS= read -e -r instruction
     else
-        IFS= read -r instruction || break
+        IFS= read -r instruction
     fi
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        if [ "$rc" -gt 128 ]; then
+            # Ctrl-C at the prompt: just a fresh prompt.
+            TS_INTERRUPTED=0
+            echo
+            continue
+        fi
+        if [ -t 0 ]; then
+            # Ctrl-D would close this panel with no way back; require :quit.
+            eof_count=$((eof_count + 1))
+            [ "$eof_count" -ge 3 ] && break
+            echo
+            echo "(Ctrl-D is ignored here; type :quit to leave)"
+            continue
+        fi
+        break
+    fi
+    eof_count=0
+    TS_INTERRUPTED=0
     [ -z "$instruction" ] && continue
     history -s "$instruction"
 
@@ -389,34 +472,37 @@ while true; do
             ts_run_manual_command "$manual_cmd"
             continue
             ;;
-        ":engine claude"|":engine codex"|":engine agy")
+        ":engine "*)
             requested="${instruction#:engine }"
-            TS_ENGINE="$(ts_pick_engine "$requested")" || { echo "engine unavailable"; continue; }
+            case "$requested" in
+                claude|codex|agy) ;;
+                *) echo "usage: :engine claude|codex|agy"; continue ;;
+            esac
+            picked="$(ts_pick_engine "$requested")" || { echo "engine unavailable"; continue; }
+            [ "$picked" != "$requested" ] && echo "$requested is not installed; using $picked."
+            TS_ENGINE="$picked"
             echo "engine: $TS_ENGINE"
+            continue
+            ;;
+        :help)
+            echo ":cmd <command>, :manual, :auto readonly|off, :context on|off|show|clear, :fix [on|off], :follow <goal>, :explain [command], :watch on|all|off|pause|resume, :engine claude|codex|agy, :quit"
+            continue
+            ;;
+        :*)
+            echo "unknown or incomplete command: ${instruction%% *}   (type :help for the list)"
             continue
             ;;
     esac
 
     prompt="$(ts_build_prompt "$instruction")"
-    if ! raw="$(ts_call_engine "$TS_ENGINE" "$prompt")"; then
-        failed_engine="$TS_ENGINE"
-        recovered=0
-        for fallback_engine in "${TS_ENGINES[@]}"; do
-            [ "$fallback_engine" = "$failed_engine" ] && continue
-            ts_resolve_bin "$fallback_engine" > /dev/null 2>&1 || continue
-            echo "error: $failed_engine did not respond; trying $fallback_engine."
-            if raw="$(ts_call_engine "$fallback_engine" "$prompt")"; then
-                TS_ENGINE="$fallback_engine"
-                echo "engine: $TS_ENGINE"
-                recovered=1
-                break
-            fi
-        done
-        if [ "$recovered" -eq 0 ]; then
-            echo "error: no AI engine responded; rephrase the instruction."
-            continue
-        fi
+    ts_ask "$prompt"; ask_rc=$?
+    if [ "$ask_rc" -eq 2 ]; then
+        continue
+    elif [ "$ask_rc" -ne 0 ]; then
+        echo "error: no AI engine responded; rephrase the instruction."
+        continue
     fi
+    raw="$TS_REPLY"
 
     force_manual=0
     ts_parse_structured "$raw"; src=$?
@@ -429,7 +515,7 @@ while true; do
     fi
     if [ "$prc" -eq 2 ]; then
         echo "unclear response:"
-        echo "$parsed"
+        ts_clean_text <<< "$parsed"
         printf 'continue anyway, confirming each line separately? enter=yes, n=cancel: '
         if ! IFS= read -r reply || [ "$reply" = "n" ] || [ "$reply" = "N" ]; then
             continue

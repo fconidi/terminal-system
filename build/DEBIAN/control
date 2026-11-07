@@ -1,12 +1,11 @@
 Package: terminal-system
-Version: 1.3.0
+Version: 1.4.0
 Section: utils
 Priority: optional
 Architecture: all
-Depends: bash, tmux
-Suggests: python3
-Recommends: xclip
-Maintainer: Franco Conidi aka edmond <fconidi@gmail.com>
+Depends: bash, tmux (>= 3.2), coreutils, grep, sed
+Recommends: python3, xclip
+Maintainer: Franco Conidi <fconidi@gmail.com>
 Homepage: https://www.syslinuxos.com
 Description: AI-assisted two-panel terminal (natural language -> shell commands)
  A tmux two-panel layout: the right panel takes instructions in natural
@@ -23,10 +22,11 @@ Description: AI-assisted two-panel terminal (natural language -> shell commands)
  confirmation.
  .
  Session instructions and left-panel output are kept as AI context only
- if explicitly enabled (":context on"; off by default), are scanned for
- common secret patterns first, and are never written to disk.
+ if explicitly enabled (":context on"; off by default) and are scanned for
+ common secret patterns first. Nothing about them is written to disk by
+ terminal-system; only the consent given to ":watch" is remembered.
  .
  Requires the "claude", "codex" and/or "agy" CLI to already be installed and
  authenticated; none is a hard package dependency since they do not ship
  as a .deb on this system.
-Installed-Size: 252
+Installed-Size: 272

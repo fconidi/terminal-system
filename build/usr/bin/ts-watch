@@ -36,6 +36,7 @@ changed_at=0
 first_change=0
 last_request=0
 pending=0
+failures=0
 
 while true; do
     sleep 1
@@ -87,10 +88,18 @@ while true; do
 - language: $lang
 Latest terminal output:
 $(cat "$WORK/current")"
-    if ! reply="$(ts_call_engine "$TS_ENGINE" "$prompt" "$TS_WATCH_SYSTEM_PROMPT")"; then
-        echo "[$(date +%H:%M:%S)] AI engine did not respond; watching stopped. Run :watch on again to restart."
-        exit 1
+    if ! ts_ask "$prompt" "$TS_WATCH_SYSTEM_PROMPT"; then
+        failures=$((failures + 1))
+        echo "[$(date +%H:%M:%S)] no AI engine responded (attempt $failures)."
+        if [ "$failures" -ge 3 ]; then
+            echo "[$(date +%H:%M:%S)] still failing; trying again in 60 s. :watch off closes this panel."
+            sleep 60
+            failures=0
+        fi
+        continue
     fi
+    failures=0
+    reply="$TS_REPLY"
     [ "$(tr -d '[:space:]' <<< "$reply")" = "OK" ] && continue
-    printf '\n[%s]\n%s\n' "$(date +%H:%M:%S)" "$reply"
+    printf '\n[%s]\n%s\n' "$(date +%H:%M:%S)" "$(ts_clean_text <<< "$reply")"
 done
